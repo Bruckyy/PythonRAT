@@ -166,3 +166,4 @@ cython_debug/
 # Certificate and Private key
 server.crt
 server.key
+*.jpg

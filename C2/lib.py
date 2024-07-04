@@ -13,6 +13,8 @@ class Agent:
         self.id = id
         self.hostname = None
         self.user = None
+        self.mac = None
+        self.uid = None
 
     def __str__(self):
         return f"[{self.id}] Agent: {self.ip}:{self.port}"
@@ -92,6 +94,8 @@ class Server:
         json_object = json.loads(json_string)
         agent.hostname = json_object['hostname']
         agent.user = json_object['user']
+        agent.mac = json_object['mac']
+        agent.uid = json_object['uid']
 
     def acceptConnections(self):
         while not self.server_stop:

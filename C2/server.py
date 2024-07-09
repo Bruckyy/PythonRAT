@@ -232,7 +232,12 @@ class Server:
                             os.remove(file)
                             return
                         f.write(data)
-                print(f'File saved at {os.getcwd()}{'/' if self.platform == 'Linux' else '\\'}{file}')
+                slash = ""
+                if self.platform == 'Linux':
+                    slash = '/'
+                else:
+                    slash = '\\'
+                print(f'File saved at {os.getcwd()}{slash}{file}')
     
     def upload(self, args):
         if self.isAgentSelected():

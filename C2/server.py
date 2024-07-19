@@ -127,6 +127,7 @@ class Server:
         agent.mac = json_object['mac']
         agent.uid = json_object['uid']
         agent.timestamp = json_object['timestamp']
+        agent.os = json_object['os']
 
 
     def acceptConnections(self):
@@ -185,12 +186,12 @@ class Server:
         """Display all connected agents"""
         if self.agents:
             print("")
-            print("=" * 90)
-            print(f"{'ID':<5}{'IP Address':<20}{'Port':<10}{'User':<15}{'Hostname':<20}{'Uptime':<15}")
-            print("-" * 90)
+            print("=" * 80)
+            print(f"{'ID':<5}{'Connection':<23}{'Session':<25}{'Uptime':<15}{'OS'}")
+            print("-" * 80)
             for agent in self.agents:
-                print(f"{agent.id:<5}{agent.ip:<20}{agent.port:<10}{agent.user:<15}{agent.hostname:<20}{self.getAgentUptime(agent)}")
-            print("=" * 90)
+                print(f"{agent.id:<5}{agent.ip:}:{agent.port:<10}{agent.user}@{agent.hostname:<20}{self.getAgentUptime(agent):<15}{agent.os}")
+            print("=" * 80)
             print("")
         else:
             print("No agents connected")

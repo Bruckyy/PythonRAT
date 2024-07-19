@@ -9,6 +9,7 @@ class Agent:
         self.mac = None
         self.uid = None
         self.timestamp = None
+        self.os = None
 
     def __str__(self):
         return f"[{self.id}] Agent: {self.ip}:{self.port}"

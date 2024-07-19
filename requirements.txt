@@ -1,1 +1,7 @@
-prompt_toolkit
+altgraph==0.17.4
+mss==9.0.1
+packaging==24.1
+prompt_toolkit==3.0.47
+pyinstaller==6.9.0
+pyinstaller-hooks-contrib==2024.7
+wcwidth==0.2.13

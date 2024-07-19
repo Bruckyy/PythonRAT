@@ -311,6 +311,9 @@ class Server:
             self.current_agent = Agent(['',''],'',0) # Reset with a dummy agent
 
     def hashdump(self, args):
+        shadow_filename = "shadow"
+        sam_filename = "sam"
+        system_filename = "system"
         args = list(filter(lambda x: x != "", args.split(" ")))
         if len(args) < 1:
             print("Please select a path to store the results\n\tEx: hashdump password.hashes")

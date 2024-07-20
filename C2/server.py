@@ -191,7 +191,7 @@ class Server:
             print(f"{'ID':<5}{'Connection':<23}{'Session':<25}{'Uptime':<15}{'OS'}")
             print("-" * 80)
             for agent in self.agents:
-                print(f"{agent.id:<5}{agent.ip:}:{agent.port:<10}{agent.user}@{agent.hostname:<20}{self.getAgentUptime(agent):<15}{agent.os}")
+                print(f"{agent.id:<5}{agent.ip:}:{agent.port:<10}{agent.user}@{agent.hostname:<19}{self.getAgentUptime(agent):<15}{agent.os}")
             print("=" * 80)
             print("")
         else:
@@ -209,7 +209,6 @@ class Server:
                 return
         print(f"No agent with ID {id}")
             
-
 
     def shell(self, args):
         self.current_agent.sock.sendall("shell".encode())

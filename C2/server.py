@@ -6,6 +6,7 @@ import select, datetime
 from prompt_toolkit import PromptSession
 
 DATA_CHUNK_SIZE = 1024
+INCOMING_FOLDER_NAME = "incoming"
 
 
 class Server:
@@ -263,14 +264,12 @@ class Server:
     def get_download_folder_path(self):
         """Get the path of the folder where the downloaded files will be stored"""
         folder_name = f"{self.current_agent.ip} - {self.current_agent.user}@{self.current_agent.hostname}"
-        return os.path.join(os.getcwd(), folder_name)
+        return os.path.join(os.getcwd(), INCOMING_FOLDER_NAME, folder_name)
 
     def download_folder_creation(self):
         """Create a folder to store the downloaded files if it doesn't exist"""
         full_local_path = self.get_download_folder_path()
-        # Check if the folder exists
-        if not os.path.exists(full_local_path):
-            os.mkdir(full_local_path)
+        os.makedirs(full_local_path, exist_ok=True)
 
     def is_socket_alive(self, sock):
         """Check if the agents are still alive by checking the readability of the socket"""

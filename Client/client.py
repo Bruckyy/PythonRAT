@@ -117,7 +117,6 @@ class Client:
                             self.secure_sock.sendall(chunk)
                     self.secure_sock.sendall(SIG_EOF)
                 except Exception as e:
-                    print("Error while sending file: ", e)
                     self.secure_sock.sendall(f"ERROR:\n {str(e)}".encode())
             else:
                 # Sending error code if user doesnt have permissions to dump hashes
@@ -140,23 +139,14 @@ class Client:
                     if data == SIG_EOF or not data:
                         break
                     if data == FILE_NOT_FOUND:
-                        print(f"ERROR: {file_path} not found on the target.")
                         os.remove(file)
                         return
                     elif data == ERROR_INSUFFICIENT_PERMS:
-                        print(f"ERROR: Insufficient permissions to get {file}.")
                         os.remove(file)
                         return
                     f.write(data)
                     file_length += len(data)
-            slash = ""
-            if self.platform == 'Linux':
-                slash = '/'
-            else:
-                slash = '\\'
-            print(f'File saved at {os.getcwd()}{slash}{file} ({file_length} b)')
         except Exception as e:
-            print(f"Error: {e}")
             os.remove(file)
 
     def delete_file(self, filepath):

@@ -1,5 +1,5 @@
 import socket, ssl, threading, os, subprocess
-import platform, uuid, datetime
+import platform, uuid
 import hashlib
 from getpass import getuser
 
@@ -87,7 +87,7 @@ class Client:
     ####################################################################################################################
 
     def getJSONHostInfos(self):
-        return f"{{\"hostname\": \"{self.hostname}\", \"user\": \"{self.user}\", \"mac\": \"{self.mac}\", \"uid\": \"{self.uid}\", \"timestamp\": \"{datetime.datetime.now()}\", \"os\": \"{platform.system()}\"}}"
+        return f"{{\"hostname\": \"{self.hostname}\", \"user\": \"{self.user}\", \"mac\": \"{self.mac}\", \"uid\": \"{self.uid}\", \"os\": \"{platform.system()}\"}}"
 
     def getClientUID(self):
         """Create a UID combining the hostname the mac address and the user running the agent"""

@@ -10,7 +10,7 @@ class Agent:
         self.user = None
         self.mac = None
         self.uid = None
-        self.timestamp = datetime.datetime.now()
+        self.timestamp = str(datetime.datetime.now())
         self.os = None
 
     def __str__(self):

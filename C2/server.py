@@ -340,13 +340,14 @@ class Server:
     def display_agents(self, args=None):
         """Display all connected agents"""
         if self.agents:
+            banner_size = 90
             print("")
-            print("=" * 80)
-            print(f"{'ID':<5}{'Connection':<23}{'Session':<25}{'Uptime':<15}{'OS'}")
-            print("-" * 80)
+            print("=" * banner_size)
+            print(f"{'ID':<5}{'Connection':<23}{'Session':<30}{'Uptime':<15}{'OS'}")
+            print("-" * banner_size)
             for agent in self.agents:
-                print(f"{agent.id:<5}{agent.ip + ':' + str(agent.port):<23}{agent.user + '@' + agent.hostname:<25}{self.get_agent_uptime(agent):<15}{agent.os}")
-            print("=" * 80)
+                print(f"{agent.id:<5}{agent.ip + ':' + str(agent.port):<23}{agent.user + '@' + agent.hostname:<30}{str(self.get_agent_uptime(agent)):<15}{agent.os}")
+            print("=" * banner_size)
             print("")
         else:
             print("No agents connected")
@@ -370,7 +371,6 @@ class Server:
 
     def get_agent_uptime(self, agent):
         timestamp = datetime.datetime.now()
-
         difference = timestamp - datetime.datetime.fromisoformat(agent.timestamp)
         days = difference.days
 

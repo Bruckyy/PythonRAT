@@ -1,3 +1,5 @@
+import datetime
+
 class Agent:
     def __init__(self, conn, sock, id):
         self.ip = conn[0]
@@ -8,7 +10,7 @@ class Agent:
         self.user = None
         self.mac = None
         self.uid = None
-        self.timestamp = None
+        self.timestamp = datetime.datetime.now()
         self.os = None
 
     def __str__(self):

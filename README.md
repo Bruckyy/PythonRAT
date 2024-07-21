@@ -85,3 +85,17 @@ In order to enable persistancy, you must uncomment the following line twice in t
 ```python
 #client.persistence()
 ```
+
+### Files structure
+
+```
+- C2/
+    - main.py: Start the server, should be run with python
+    - server.py: Server class, handles the communication with the agents
+    - server.key: Private key for the server
+    - server.crt: Certificate for the server
+    - symbols.py: Custom codes for the communication
+    - agent.py: Agent class
+- Client/
+    - client.py: Client class, handles the communication with the server
+```

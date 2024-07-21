@@ -381,6 +381,7 @@ class Server:
         self.current_agent = Agent(['', ''], '', 0)
 
     def exec(self, args):
+        """ Execute a system command in the local machine """
         os.system(args)
 
     def exit(self, args=None):

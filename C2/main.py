@@ -5,10 +5,13 @@ if __name__ == "__main__":
 
     try:
         port = int(sys.argv[1])
+        if port < 0 or port > 65535:
+            print("Port number needs to be between 0 and 65535")
+            exit(1)
         
     except ValueError:
         print("Port number needs to be an Integer")
-        exit()
+        exit(1)
 
     server = Server('0.0.0.0',port)
 

@@ -16,11 +16,15 @@ The server encrypts the communication with the agents. You must generate a priva
 
 1. Generate the private key:
 ```bash
-openssl genpkey -algorithm RSA -out server.key -aes256
+openssl genpkey -algorithm RSA -out server.key
 ```
-2. Generate the certificate from the private key:
+2. Generate the csr from the private key:
 ```bash
-openssl req -new -key server.key -out server.crt
+openssl req -new -key server.key -out server.csr
+```
+3. Sign the csr with the private key:
+```bash
+openssl x509 -req -days 365 -in server.csr -signkey server.key -out server.crt
 ```
 
 Please, name the files as `server.key` and `server.crt` and place them in the `C2` directory.

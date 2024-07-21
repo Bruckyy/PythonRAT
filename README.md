@@ -23,17 +23,25 @@ As agreed, the linux client will be executed by the python interpreter. So, no b
 For Windows client, you must additionally compile the client by running the following command: (`pyinstaller` must be installed in the previous step)
 
 ```bash
-pyinstaller --noconsole --onefile client.py
+pyinstaller --noconsole --onefile main.py
+```
+
+or
+
+```bash
+python3 -m PyInstaller --noconsole --onefile main.py
 ```
 
 `--noconsole` means that no window will pop up when the executable is executed.
 
 You must find the executable in the `dist` directory.
 
+If you got an error, check [this](https://pyinstaller.org/en/stable/installation.html#troubleshooting-missing-pyinstaller-command).
+
 ### Usage
 #### Client
 
-The client don't need any argument to be executed, in order to make quick attacks easier. However, if you want to specify the server IP and port, you can modify those values in the `client.py`, at the end of the file: (`Client` folder)
+The client don't need any argument to be executed, in order to make quick attacks easier. However, if you want to specify the server IP and port, you can modify those values in the `main.py`, at the end of the file: (`Client` folder)
 
 ```python
 C2_IP = 'YOUR_IP'
@@ -43,7 +51,7 @@ C2_PORT = YOUR_PORT
 You can run the client by executing the following command:
 
 ```bash
-python3 client.py
+python3 main.py
 ```
 
 #### Server
@@ -80,7 +88,7 @@ screenshot  : Take a screenshot from the selected agent, you can optionally spec
 
 #### Persistancy
 
-In order to enable persistancy, you must uncomment the following line twice in the `client.py`, at the end of the file:
+In order to enable persistancy, you must uncomment the following line twice in the `main.py`, at the end of the file:
 
 ```python
 #client.persistence()

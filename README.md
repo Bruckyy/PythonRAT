@@ -97,5 +97,8 @@ In order to enable persistancy, you must uncomment the following line twice in t
     - symbols.py: Custom codes for the communication
     - agent.py: Agent class
 - Client/
-    - client.py: Client class, handles the communication with the server
+    - client.py: Client mother class, points to the correct client depending on the OS
+    - linuxClient.py: Linux client class
+    - windowsClient.py: Windows client class
+    - symbols.py: Custom codes for the communication, must be the same as the server. Redundant because of the portability.
 ```

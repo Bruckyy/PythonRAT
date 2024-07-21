@@ -4,8 +4,7 @@ import shutil, mss, mss.tools
 
 from client import Client
 
-SHADOW_PATH = os.path.join("etc", "shadow")
-
+SHADOW_PATH = "/etc/shadow"
 
 class LinuxClient(Client):
 

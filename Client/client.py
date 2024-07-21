@@ -113,7 +113,7 @@ class Client:
             if os.access(file_path, os.R_OK):
                 try:
                     with open(file_path, 'rb') as f:
-                        while chunk := f.read(DATA_CHUNK_SIZE):
+                        while chunk := f.read(COMMAND_CHUNK_SIZE):
                             self.secure_sock.sendall(chunk)
                     self.secure_sock.sendall(SIG_EOF)
                 except Exception as e:

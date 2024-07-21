@@ -12,6 +12,19 @@ In order to install the dependencies, you must run the following command: (with 
 pip install -r requirements.txt
 ```
 
+The server encrypts the communication with the agents. You must generate a private key and a certificate for the server. You can do it by running the following command:
+
+1. Generate the private key:
+```bash
+openssl genpkey -algorithm RSA -out server.key -aes256
+```
+2. Generate the certificate from the private key:
+```bash
+openssl req -new -key server.key -out server.crt
+```
+
+Please, name the files as `server.key` and `server.crt` and place them in the `C2` directory.
+
 ### Build
 
 #### Linux

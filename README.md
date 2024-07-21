@@ -58,19 +58,30 @@ python3 main.py YOUR_PORT
 ```
 <command> [args]
 ====================
-upload      : Upload a file to selected target | LOCAL_FILE: String   REMOTE_DEST: String | upload payload.exe /tmp/payload.exe
-hashdump    : Dump the hashes from the target (may crash on Windows)
-search      : Search a file on the target's filesystem 
-ipconfig    : Retrieve the IP Configuration from the current target 
-shell       : Open a reverse shell from the selected agent (type exit to quit the shell) (not interactive)
-screenshot  : Take a screenshot from the selected agent, you can optionally specify a name for the screenshot | Optional: FILE: String | screenshot [my_screenshot]
-download    : Download the specified files | FILE: String | Ex: download /etc/passwd /etc/hosts
-exit        : Exit the server
 agents      : List all connected agents
 agent       : Select an agent by ID | ID: Integer | Ex: agent 3
 bg          : Deselect the current agent
 kill        : Kill an agent by id | ID: Integer | kill 4
-help        : Show this help message
 exec        : Execute a system command in the local machine
+help        : Show this help message
+exit        : Exit the server
+==================== ONCE AGENT SELECTED:
+download    : Download the specified files | FILE: String | Ex: download /etc/passwd /etc/hosts
+upload      : Upload a file to selected target | LOCAL_FILE: String   REMOTE_DEST: String | upload payload.exe /tmp/payload.exe
+search      : Search a file on the target's filesystem 
+shell       : Open a reverse shell from the selected agent (type exit to quit the shell) (not interactive)
+hashdump    : Dump the hashes from the target (may crash on Windows)
+ipconfig    : Retrieve the IP Configuration from the current target 
+screenshot  : Take a screenshot from the selected agent, you can optionally specify a name for the screenshot | Optional: FILE: String | screenshot [my_screenshot]
 ====================
+```
+
+### Misc
+
+#### Persistancy
+
+In order to enable persistancy, you must uncomment the following line twice in the `client.py`, at the end of the file:
+
+```python
+#client.persistence()
 ```

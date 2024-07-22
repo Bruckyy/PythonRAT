@@ -58,11 +58,16 @@ If you got an error, check [this](https://pyinstaller.org/en/stable/installation
 ### Usage
 #### Client
 
-The client don't need any argument to be executed, in order to make quick attacks easier. However, if you want to specify the server IP and port, you can modify those values in the `main.py`, at the end of the file: (`Client` folder)
+```
+usage: main.py [-h] [-d] [--ip IP] [--port PORT]
 
-```python
-C2_IP = 'YOUR_IP'
-C2_PORT = YOUR_PORT
+Client for the C2
+
+options:
+  -h, --help   show this help message and exit
+  -d, --debug  Enable debug mode
+  --ip IP      Server IP (default: 127.0.0.1)
+  --port PORT  Server Port (default: 8888)
 ```
 
 You can run the client by executing the following command:

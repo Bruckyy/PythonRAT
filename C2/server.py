@@ -192,7 +192,7 @@ class Server:
     def simple_ssl_connection(self):
         """ Perform a simple SSL connection to the listening socket. Must be used to exit the server """
         # open connection socket to the listening socket. SSL connection
-        context = ssl.create_default_context()
+        context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
         context.check_hostname = False
         context.verify_mode = ssl.CERT_NONE
 

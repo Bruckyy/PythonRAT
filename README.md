@@ -59,15 +59,16 @@ If you got an error, check [this](https://pyinstaller.org/en/stable/installation
 #### Client
 
 ```
-usage: main.py [-h] [-d] [--ip IP] [--port PORT]
+usage: main.py [-h] [-d] [--ip IP] [--port PORT] [--persistence]
 
 Client for the C2
 
 options:
-  -h, --help   show this help message and exit
-  -d, --debug  Enable debug mode
-  --ip IP      Server IP (default: 127.0.0.1)
-  --port PORT  Server Port (default: 8888)
+  -h, --help     show this help message and exit
+  -d, --debug    Enable debug mode
+  --ip IP        Server IP (default: 127.0.0.1)
+  --port PORT    Server Port (default: 8888)
+  --persistence  Enable persistence
 ```
 
 You can run the client by executing the following command:
@@ -108,14 +109,6 @@ screenshot  : Take a screenshot from the selected agent, you can optionally spec
 
 ### Misc
 
-#### Persistancy
-
-In order to enable persistancy, you must uncomment the following line twice in the `main.py`, at the end of the file:
-
-```python
-#client.persistence()
-```
-
 ### Files structure
 
 ```
@@ -132,3 +125,10 @@ In order to enable persistancy, you must uncomment the following line twice in t
     - windowsClient.py: Windows client class
     - symbols.py: Custom codes for the communication, must be the same as the server. Redundant because of the portability.
 ```
+
+### Heartbeat
+
+The program got a heartbeat system. One run, agents send frequently a little packet with their ID to the server in order
+to keep them alive from the server side.
+
+The client stay alive even if the server is down and the server update its agent table when the client is down.

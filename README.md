@@ -82,12 +82,25 @@ python3 main.py
 In order to start the server, you must specify the listening port as the first argument: (`C2` folder)
 
 ```bash
-python3 main.py YOUR_PORT
+python3 main.py
+```
+
+```
+usage: main.py [-h] [--port PORT] [--beat BEAT] [-d]
+
+Server for the C2
+
+options:
+  -h, --help   show this help message and exit
+  --port PORT  Server Port (default: 8888)
+  --beat BEAT  Beat Port (default: 8889
+  -d, --debug  Enable debug mode
 ```
 
 ### Available commands on the server
 ```
 <command> [args]
+Available Commands:
 ====================
 agents      : List all connected agents
 agent       : Select an agent by ID | ID: Integer | Ex: agent 3
@@ -98,7 +111,7 @@ help        : Show this help message
 exit        : Exit the server
 ==================== ONCE AGENT SELECTED:
 download    : Download the specified files | FILE: String | Ex: download /etc/passwd /etc/hosts
-upload      : Upload a file to selected target | LOCAL_FILE: String   REMOTE_DEST: String | upload payload.exe /tmp/payload.exe
+upload      : Upload a file to selected target | FILE: String | upload payload.exe ./payloads/another_payload.exe
 search      : Search a file on the target's filesystem 
 shell       : Open a reverse shell from the selected agent (type exit to quit the shell) (not interactive)
 hashdump    : Dump the hashes from the target (may crash on Windows)
@@ -106,6 +119,9 @@ ipconfig    : Retrieve the IP Configuration from the current target
 screenshot  : Take a screenshot from the selected agent, you can optionally specify a name for the screenshot | Optional: FILE: String | screenshot [my_screenshot]
 ====================
 ```
+/!\ The `download`, `search` and `hashdump` commands can fail on windows clients. /!\
+
+The download command will put downloaded files into the `incoming` directory that it will create.
 
 ### Misc
 

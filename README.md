@@ -123,6 +123,8 @@ screenshot  : Take a screenshot from the selected agent, you can optionally spec
 
 The download command will put downloaded files into the `incoming` directory that it will create.
 
+Commands are base64 encoded over the network between the server and the agents. It will avoid some issues with special characters.
+
 ### Misc
 
 ### Files structure
